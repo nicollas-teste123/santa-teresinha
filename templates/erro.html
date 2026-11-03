@@ -1,0 +1,4 @@
+{% extends "base.html" %}
+{% block body %}{% include "_topo.html" %}
+<main class="wrap page"><h1>Ops</h1><p>{{ msg }}</p><a class="btn" href="{{ url_for('index') }}">Voltar ao início</a></main>
+{% endblock %}

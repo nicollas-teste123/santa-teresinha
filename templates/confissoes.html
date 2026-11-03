@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Confissões{% endblock %}
+{% block body %}
+{% set aba = 'confissoes' %}{% include "_nav.html" %}
+<main class="wrap wide page">
+  <h1>Confissões</h1>
+  <div class="grid2">
+    <section class="painel-box">
+      <h2>Horários que se repetem toda semana</h2>
+      <form method="post" class="linha" style="align-items:flex-end;margin-bottom:16px">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="acao" value="novo">
+        <div style="flex:1;min-width:130px"><label for="wd">Dia</label><select id="wd" name="weekday" required>{% for n in DIAS %}<option value="{{ loop.index0 }}">{{ n }}</option>{% endfor %}</select></div>
+        <div style="width:120px"><label for="tm">Hora</label><input type="time" id="tm" name="time" required></div>
+        <button class="btn" type="submit">Adicionar</button>
+      </form>
+      {% if slots %}
+      <table>
+        {% for s in slots %}<tr><td>{{ DIAS[s.weekday] }}</td><td>{{ s.time }}</td>
+          <td style="text-align:right"><form method="post" class="inline"><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="id" value="{{ s.id }}"><input type="hidden" name="acao" value="apagar">
+          <button class="btn perigo peq" type="submit" onclick="return confirm('Remover este horário da agenda semanal?')">Remover</button></form></td></tr>{% endfor %}
+      </table>
+      {% else %}<p class="dica">Nenhum horário cadastrado. Adicione o primeiro acima. Ele aparecerá no site toda semana.</p>{% endif %}
+    </section>
+    <section class="painel-box">
+      <h2>Quem marcou</h2>
+      {% if marcados %}
+      <div class="scroll"><table>
+        <tr><th>Quando</th><th>Nome</th><th>Telefone</th><th></th></tr>
+        {% for b in marcados %}<tr><td>{{ b.day|diabr }} · {{ b.time }}</td><td>{{ b.name }}</td>
+          <td><a href="tel:{{ b.phone }}">{{ b.phone }}</a></td>
+          <td><form method="post" class="inline"><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="id" value="{{ b.id }}"><input type="hidden" name="acao" value="cancelar">
+          <button class="btn perigo peq" type="submit" onclick="return confirm('Cancelar este agendamento?')">Cancelar</button></form></td></tr>{% endfor %}
+      </table></div>
+      {% else %}<p class="dica">Ninguém marcou ainda.</p>{% endif %}
+    </section>
+  </div>
+</main>
+{% endblock %}

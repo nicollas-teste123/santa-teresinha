@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Doação · Santa Terezinha{% endblock %}
+{% block body %}
+{% include "_topo.html" %}
+<main class="wrap page">
+  <h1>Fazer uma doação</h1>
+  {% if sem_pix %}
+    <div class="painel-box"><p>As doações por Pix ainda não estão disponíveis. Procure a secretaria da paróquia.</p></div>
+  {% else %}
+  <p>Informe seu nome e o valor. Vamos gerar o QR Code e o código Pix para você pagar no aplicativo do seu banco.</p>
+  {% with msgs = get_flashed_messages(with_categories=true) %}{% for c, m in msgs %}<div class="flash {{ c }}">{{ m }}</div>{% endfor %}{% endwith %}
+  <form method="post" class="painel-box" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <div class="campo"><label for="name">Seu nome</label><input type="text" id="name" name="name" maxlength="120" required value="{{ name or '' }}"></div>
+    <div class="campo"><label for="amount">Valor da doação (R$)</label><input type="text" id="amount" name="amount" inputmode="decimal" placeholder="Ex.: 50,00" required value="{{ amount or '' }}"></div>
+    <button class="btn full" type="submit">Gerar QR Code e código Pix</button>
+  </form>
+  {% endif %}
+</main>
+{% endblock %}

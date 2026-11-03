@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Avisos{% endblock %}
+{% block body %}
+{% set aba = 'avisos' %}{% include "_nav.html" %}
+<main class="wrap wide page">
+  <h1>Mural de avisos e lembretes</h1>
+  <p class="dica">No site, tudo o que for publicado aparece assinado como <b>{{ autor }}</b>, mesmo quando a secretaria digita.</p>
+  <div class="grid2">
+    <section class="painel-box">
+      <h2>Novo</h2>
+      <form method="post">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="acao" value="novo">
+        <div class="campo"><label for="kind">Tipo</label><select id="kind" name="kind"><option value="aviso">Aviso</option><option value="lembrete">Lembrete</option></select></div>
+        <div class="campo"><label for="text">Texto</label><textarea id="text" name="text" maxlength="600" required></textarea></div>
+        <button class="btn" type="submit">Publicar no mural</button>
+      </form>
+    </section>
+    <section>
+      {% for n in items %}
+      <div class="aviso-item {{ '' if n.active else 'oculto' }}">
+        <form method="post">
+          <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="id" value="{{ n.id }}">
+          <div class="linha" style="margin-bottom:8px">
+            <select name="kind" style="width:auto" aria-label="Tipo"><option value="aviso" {{ 'selected' if n.kind == 'aviso' }}>Aviso</option><option value="lembrete" {{ 'selected' if n.kind == 'lembrete' }}>Lembrete</option></select>
+            <span class="pill {{ 'on' if n.active else 'off' }}">{{ 'no site' if n.active else 'oculto' }}</span>
+          </div>
+          <textarea name="text" maxlength="600" aria-label="Texto">{{ n.text }}</textarea>
+          <small>Publicado por {{ n.created_by }} em {{ n.created_at|local }}</small>
+          <div class="linha" style="margin-top:10px">
+            <button class="btn peq" name="acao" value="editar" type="submit">Salvar texto</button>
+            <button class="btn sec peq" name="acao" value="alternar" type="submit">{{ 'Ocultar' if n.active else 'Mostrar' }}</button>
+            <button class="btn perigo peq" name="acao" value="apagar" type="submit" onclick="return confirm('Apagar este aviso?')">Apagar</button>
+          </div>
+        </form>
+      </div>
+      {% else %}<p class="dica">Nenhum aviso ainda. Use o formulário para publicar o primeiro.</p>{% endfor %}
+    </section>
+  </div>
+</main>
+{% endblock %}

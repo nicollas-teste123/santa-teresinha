@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Nossa padroeira · Santa Terezinha{% endblock %}
+{% block body %}
+{% include "_topo.html" %}
+<main class="wrap page">
+  <h1>Santa Terezinha do Menino Jesus</h1>
+  <p>Conheça a vida da nossa padroeira. Toque em cada parte para ler.</p>
+  {% for titulo, anos, paragrafos in historia %}
+  <details class="parte">
+    <summary><span>{{ titulo }}</span><small>{{ anos }}</small></summary>
+    <div class="corpo">{% for p in paragrafos %}<p>{{ p }}</p>{% endfor %}</div>
+  </details>
+  {% endfor %}
+  <section class="curio" aria-live="polite">
+    <h2>Você sabia?</h2>
+    <blockquote id="curio">Toque no botão para descobrir uma curiosidade sobre Santa Terezinha.</blockquote>
+    <button class="btn rosa" type="button" id="outra">Sortear curiosidade</button>
+    <p class="dica" style="margin:12px 0 0">{{ total }} curiosidades no total</p>
+  </section>
+</main>
+<script>
+var btn = document.getElementById('outra'), q = document.getElementById('curio'), ultima = '';
+btn.addEventListener('click', async function(){
+  btn.disabled = true;
+  try {
+    var t = '';
+    for (var i = 0; i < 4; i++) {
+      var r = await fetch('{{ url_for("curiosidade") }}', {cache: 'no-store'});
+      t = (await r.json()).texto;
+      if (t !== ultima) break;
+    }
+    ultima = t; q.textContent = t; btn.textContent = 'Outra curiosidade';
+  } catch (e) { q.textContent = 'Não foi possível carregar agora. Tente de novo.'; }
+  btn.disabled = false;
+});
+</script>
+{% endblock %}

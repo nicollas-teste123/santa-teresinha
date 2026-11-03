@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Confissão · Santa Terezinha{% endblock %}
+{% block body %}
+{% include "_topo.html" %}
+<main class="wrap page">
+  <h1>Marcar confissão</h1>
+  {% with msgs = get_flashed_messages(with_categories=true) %}{% for c, m in msgs %}<div class="flash {{ c }}">{{ m }}</div>{% endfor %}{% endwith %}
+  {% if not dias %}
+    <div class="painel-box"><p>No momento não há horários livres para os próximos dias. Procure a secretaria da paróquia.</p></div>
+  {% else %}
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <p>Escolha um dia e horário disponível:</p>
+    {% for d, horas in dias %}
+    <div class="dia">
+      <h3>{{ d|diabr }}</h3>
+      <div class="horas">
+        {% for h in horas %}
+        {% set v = d.isoformat() ~ '|' ~ h %}
+        <span><input type="radio" name="slot" id="s{{ loop.index }}{{ d.isoformat() }}" value="{{ v }}" required {{ 'checked' if slot == v }}><label for="s{{ loop.index }}{{ d.isoformat() }}">{{ h }}</label></span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+    <div class="painel-box" style="margin-top:20px">
+      <div class="campo"><label for="name">Seu nome</label><input type="text" id="name" name="name" maxlength="120" required value="{{ name or '' }}"></div>
+      <div class="campo"><label for="phone">Telefone com DDD</label><input type="tel" id="phone" name="phone" inputmode="tel" placeholder="(22) 99999-9999" required value="{{ phone or '' }}"></div>
+      <button class="btn full" type="submit">Confirmar agendamento</button>
+    </div>
+  </form>
+  {% endif %}
+</main>
+{% endblock %}

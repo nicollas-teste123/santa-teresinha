@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Agendado · Santa Terezinha{% endblock %}
+{% block body %}
+{% include "_topo.html" %}
+<main class="wrap page">
+  <h1>Confissão agendada</h1>
+  <div class="painel-box">
+    <p><b>{{ name }}</b>, seu horário com o padre está reservado:</p>
+    <p class="valor">{{ day|diabr }} · {{ time }}</p>
+    <p class="dica" style="text-align:center">Tire uma captura de tela para lembrar. Se não puder comparecer, avise a secretaria.</p>
+  </div>
+  <p style="margin-top:18px"><a class="btn sec full" href="{{ url_for('index') }}">Voltar ao início</a></p>
+</main>
+{% endblock %}

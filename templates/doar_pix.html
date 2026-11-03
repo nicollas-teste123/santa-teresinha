@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Pix · Santa Terezinha{% endblock %}
+{% block body %}
+{% include "_topo.html" %}
+<main class="wrap page">
+  <h1>Obrigado, {{ d.name.split()[0] }}!</h1>
+  <p class="valor">{{ d.amount|brl }}</p>
+  <p class="dica" style="text-align:center">Aponte a câmera do app do banco para o QR Code ou use o Pix copia e cola.</p>
+  <div class="qr" role="img" aria-label="QR Code do Pix">{{ qr|safe }}</div>
+  <div class="copia" id="codigo">{{ payload }}</div>
+  <button class="btn full rosa" type="button" id="copiar">Copiar código Pix</button>
+  <p class="dica" style="margin-top:14px">Que Santa Terezinha abençoe a sua generosidade. Depois de pagar, você pode fechar esta página.</p>
+</main>
+<script>
+document.getElementById('copiar').addEventListener('click', async function(){
+  var t = document.getElementById('codigo').textContent.trim(), b = this;
+  try { await navigator.clipboard.writeText(t); } catch(e) {
+    var r = document.createRange(); r.selectNodeContents(document.getElementById('codigo'));
+    var s = getSelection(); s.removeAllRanges(); s.addRange(r); document.execCommand('copy');
+  }
+  b.textContent = 'Código copiado!'; setTimeout(function(){ b.textContent = 'Copiar código Pix'; }, 2500);
+});
+</script>
+{% endblock %}

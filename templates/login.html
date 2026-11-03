@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Entrar · {{ 'Área do padre' if area == 'padre' else 'Secretaria' }}{% endblock %}
+{% block body %}
+<main class="wrap login-box">
+  <img src="{{ url_for('static', filename='img/logo.jpg') }}" alt="" width="56" height="56" style="border-radius:50%;display:block;margin:0 auto 10px">
+  <h1 style="text-align:center">{{ 'Área do padre' if area == 'padre' else 'Secretaria' }}</h1>
+  {% with msgs = get_flashed_messages(with_categories=true) %}{% for c, m in msgs %}<div class="flash {{ c }}">{{ m }}</div>{% endfor %}{% endwith %}
+  <form method="post" class="painel-box">
+    <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+    <div class="campo"><label for="u">Usuário</label><input type="text" id="u" name="username" autocomplete="username" autocapitalize="none" required autofocus></div>
+    <div class="campo"><label for="p">Senha</label><input type="password" id="p" name="password" autocomplete="current-password" required></div>
+    <button class="btn full" type="submit">Entrar</button>
+  </form>
+  <p style="text-align:center;margin-top:16px">
+    {% if area == 'admin' %}<a href="{{ url_for('login', area='padre') }}">Área do padre</a>{% else %}<a href="{{ url_for('login', area='admin') }}">Acesso da secretaria</a>{% endif %}
+    · <a href="{{ url_for('index') }}">Ir ao site</a>
+  </p>
+</main>
+{% endblock %}

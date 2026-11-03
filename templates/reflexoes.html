@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Reflexões do padre · Santa Terezinha{% endblock %}
+{% block body %}
+{% include "_topo.html" %}
+<main class="wrap page">
+  <h1>Reflexões do padre</h1>
+  {% if atual %}
+  <article class="reflexao">
+    <div class="data">{{ atual.day|datalonga }}</div>
+    <h2>{{ atual.title }}</h2>
+    <div class="texto">{{ atual.text }}</div>
+    <p class="autor">{{ autor }}</p>
+  </article>
+  {% if anteriores %}
+  <h3>Reflexões anteriores</h3>
+  <ul class="arquivo">
+    {% for r in anteriores %}<li><a href="{{ url_for('reflexao', rid=r.id) }}"><span>{{ r.title }}</span><small>{{ r.day.strftime('%d/%m/%Y') }}</small></a></li>{% endfor %}
+  </ul>
+  {% elif unica %}
+  <p><a class="btn sec full" href="{{ url_for('reflexoes') }}">Ver a reflexão mais recente</a></p>
+  {% endif %}
+  {% else %}
+  <div class="painel-box"><p>O padre ainda não publicou nenhuma reflexão. Volte em breve.</p></div>
+  {% endif %}
+</main>
+{% endblock %}

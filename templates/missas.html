@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Missas · Santa Terezinha{% endblock %}
+{% block body %}
+{% include "_topo.html" %}
+<main class="wrap page">
+  <h1>Horários de missas</h1>
+  {% if proxima %}
+  <section class="relogio" aria-live="off">
+    <h2>Próxima missa</h2>
+    <p class="quando"><b>{{ proxima.day|diabr }} às {{ proxima.time }}</b>{% if proxima.extra %}<span class="extra-tag">extra</span>{% endif %}{% if proxima.note %}<br>{{ proxima.note }}{% endif %}</p>
+    <div class="tempo" id="tempo" data-alvo="{{ proxima.iso }}" role="timer" aria-label="Contagem regressiva para a próxima missa">
+      <div><b id="t-d">--</b><span>dias</span></div>
+      <div><b id="t-h">--</b><span>horas</span></div>
+      <div><b id="t-m">--</b><span>min</span></div>
+      <div><b id="t-s">--</b><span>seg</span></div>
+    </div>
+    <p class="agora" id="agora" hidden>É agora! Que a missa seja abençoada.</p>
+  </section>
+  {% else %}
+  <div class="painel-box" style="margin-bottom:22px"><p>Os horários das missas ainda não foram cadastrados. Procure a secretaria da paróquia.</p></div>
+  {% endif %}
+
+  {% if semana %}
+  <h2>Todas as semanas</h2>
+  <ul class="grade">
+    {% for nome, horas in semana %}
+    <li><span class="dia-nome">{{ nome }}</span><span class="horas-txt">{% for h in horas %}{{ h.time }}{% if h.note %}<small>{{ h.note }}</small>{% elif not loop.last %} · {% endif %}{% endfor %}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if extras %}
+  <h2>Missas extras</h2>
+  <ul class="grade">
+    {% for e in extras %}
+    <li><span class="dia-nome">{{ e.day|diabr }}</span><span class="horas-txt">{{ e.time }}{% if e.note %}<small>{{ e.note }}</small>{% endif %}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</main>
+{% if proxima %}
+<script>
+(function(){
+  var box = document.getElementById('tempo'), alvo = new Date(box.dataset.alvo).getTime(), recarregou = false;
+  function pad(n){ return String(n).padStart(2, '0'); }
+  function tick(){
+    var falta = Math.floor((alvo - Date.now()) / 1000);
+    if (falta <= 0) {
+      box.hidden = true; document.getElementById('agora').hidden = false;
+      if (!recarregou) { recarregou = true; setTimeout(function(){ location.reload(); }, 60000); }
+      return;
+    }
+    document.getElementById('t-d').textContent = Math.floor(falta / 86400);
+    document.getElementById('t-h').textContent = pad(Math.floor(falta % 86400 / 3600));
+    document.getElementById('t-m').textContent = pad(Math.floor(falta % 3600 / 60));
+    document.getElementById('t-s').textContent = pad(falta % 60);
+  }
+  tick(); setInterval(tick, 1000);
+})();
+</script>
+{% endif %}
+{% endblock %}

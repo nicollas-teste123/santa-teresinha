@@ -1,0 +1,18 @@
+<nav class="nav" aria-label="Painel">
+  <div class="wrap wide">
+    <b>{{ 'Área do padre' if area == 'padre' else 'Secretaria' }}</b>
+    <a href="{{ url_for('painel', area=area) }}" class="{{ 'on' if aba == 'painel' }}">Resumo</a>
+    <a href="{{ url_for('avisos', area=area) }}" class="{{ 'on' if aba == 'avisos' }}">Avisos</a>
+    <a href="{{ url_for('missas_admin', area=area) }}" class="{{ 'on' if aba == 'missas' }}">Missas</a>
+    <a href="{{ url_for('doacoes', area=area) }}" class="{{ 'on' if aba == 'doacoes' }}">Doações</a>
+    {% if area == 'padre' %}
+    <a href="{{ url_for('padre_reflexoes') }}" class="{{ 'on' if aba == 'reflexoes' }}">Reflexões</a>
+    <a href="{{ url_for('confissoes') }}" class="{{ 'on' if aba == 'confissoes' }}">Confissões</a>
+    <a href="{{ url_for('secretarios') }}" class="{{ 'on' if aba == 'secretarios' }}">Secretários</a>
+    {% else %}
+    <a href="{{ url_for('login', area='padre') }}">Área do padre</a>
+    {% endif %}
+    <form method="post" action="{{ url_for('sair', area=area) }}"><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><button class="sair" type="submit">Sair ({{ user.username }})</button></form>
+  </div>
+</nav>
+{% with msgs = get_flashed_messages(with_categories=true) %}{% if msgs %}<div class="wrap wide" style="padding-top:16px">{% for c, m in msgs %}<div class="flash {{ c }}" style="margin:0 0 8px">{{ m }}</div>{% endfor %}</div>{% endif %}{% endwith %}

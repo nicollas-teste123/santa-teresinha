@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Resumo{% endblock %}
+{% block body %}
+{% set aba = 'painel' %}{% include "_nav.html" %}
+<main class="wrap wide page">
+  <h1>Resumo das doações</h1>
+  <div class="cards">
+    <div class="num"><small>Total confirmado</small><b>{{ total|brl }}</b></div>
+    <div class="num"><small>Doações confirmadas</small><b>{{ qtd }}</b></div>
+    <div class="num"><small>Valor médio</small><b>{{ media|brl }}</b></div>
+    <div class="num"><small>Aguardando conferência</small><b>{{ pend }}</b></div>
+  </div>
+  <div class="grid2">
+    <section class="painel-box">
+      <h2>Últimos 6 meses (confirmadas)</h2>
+      <div class="barras">
+        {% for rot, v, pct in barras %}<div><em>{{ v|brl if v else '' }}</em><i style="height:{{ pct }}%"></i><span>{{ rot }}</span></div>{% endfor %}
+      </div>
+    </section>
+    <section class="painel-box">
+      <h2>Últimas doações</h2>
+      {% if ultimas %}
+      <div class="scroll"><table>
+        <tr><th>Nome</th><th>Valor</th><th>Situação</th></tr>
+        {% for d in ultimas %}<tr><td>{{ d.name }}</td><td>{{ d.amount|brl }}</td><td><span class="pill {{ d.status }}">{{ d.status }}</span></td></tr>{% endfor %}
+      </table></div>
+      {% else %}<p class="dica">Ainda não há doações.</p>{% endif %}
+      <p style="margin:14px 0 0"><a class="btn sec peq" href="{{ url_for('doacoes', area=area) }}">Ver histórico completo</a></p>
+    </section>
+  </div>
+  <p class="dica" style="margin-top:18px">O Pix é pago no app do banco, então o site não recebe a confirmação sozinho. Compare com o extrato e marque como "confirmado" na tela de Doações. Só as confirmadas entram nos totais.</p>
+</main>
+{% endblock %}

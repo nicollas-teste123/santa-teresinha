@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Doações{% endblock %}
+{% block body %}
+{% set aba = 'doacoes' %}{% include "_nav.html" %}
+<main class="wrap wide page">
+  <h1>Histórico de doações Pix</h1>
+  <div class="linha" style="margin-bottom:14px">
+    <a class="btn peq {{ '' if filtro == '' else 'sec' }}" href="{{ url_for('doacoes', area=area) }}">Todas</a>
+    <a class="btn peq {{ '' if filtro == 'gerado' else 'sec' }}" href="{{ url_for('doacoes', area=area, filtro='gerado') }}">Aguardando conferência</a>
+    <a class="btn peq {{ '' if filtro == 'confirmado' else 'sec' }}" href="{{ url_for('doacoes', area=area, filtro='confirmado') }}">Confirmadas</a>
+  </div>
+  <div class="painel-box scroll">
+    {% if items %}
+    <table>
+      <tr><th>Data</th><th>Nome</th><th>Valor</th><th>Situação</th><th></th></tr>
+      {% for d in items %}
+      <tr>
+        <td>{{ d.created_at|local }}</td><td>{{ d.name }}</td><td>{{ d.amount|brl }}</td>
+        <td><span class="pill {{ d.status }}">{{ d.status }}</span></td>
+        <td><form method="post" class="inline"><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="id" value="{{ d.id }}"><input type="hidden" name="acao" value="alternar">
+          <button class="btn sec peq" type="submit">{{ 'Desmarcar' if d.status == 'confirmado' else 'Marcar como confirmado' }}</button></form></td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="dica">Nenhuma doação nesta lista.</p>{% endif %}
+  </div>
+  <p class="dica" style="margin-top:12px">"Aguardando conferência" significa que a pessoa gerou o QR Code. Confirme depois de ver o valor no extrato do banco (o código de cada Pix termina com TEREZINHA e o número da doação).</p>
+</main>
+{% endblock %}

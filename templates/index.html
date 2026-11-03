@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% from "_icones.html" import icone %}
+{% block body %}
+{% if notices %}
+<section class="mural" aria-label="Avisos e lembretes">
+  <div class="wrap">
+    <h2>Avisos e lembretes</h2>
+    <ul>
+      {% for n in notices %}
+      <li class="{{ n.kind }}"><span class="tag">{{ 'Lembrete:' if n.kind == 'lembrete' else 'Aviso:' }}</span>{{ n.text }}
+        <small>{{ autor }} · {{ n.created_at|local }}</small></li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% endif %}
+<header class="hero wrap">
+  <img class="logo" src="{{ url_for('static', filename='img/logo.jpg') }}" alt="Logo da paróquia">
+  <div class="arco"><img src="{{ url_for('static', filename='img/santa.jpg') }}" alt="Pintura de Santa Terezinha do Menino Jesus segurando rosas"></div>
+  <h1>Santa Terezinha<br>do Menino Jesus</h1>
+  <p>Seja bem-vindo à nossa comunidade</p>
+</header>
+<main class="wrap">
+  <ul class="lista">
+    <li><a class="item destaque" href="{{ url_for('doar') }}"><span class="ic">{{ icone('doar') }}</span><span><b>Fazer uma doação</b><span class="s">Contribua por Pix com a paróquia</span></span><span class="seta">›</span></a></li>
+    <li><a class="item" href="{{ url_for('missas') }}"><span class="ic">{{ icone('igreja') }}</span><span><b>Horários de missas</b><span class="s">{% if proxima %}Próxima: {{ proxima.day|diabr }} às {{ proxima.time }}{% else %}Veja a programação{% endif %}</span></span><span class="seta">›</span></a></li>
+    <li><a class="item" href="{{ url_for('reflexoes') }}"><span class="ic">{{ icone('livro') }}</span><span><b>Reflexões do padre</b><span class="s">A palavra do dia</span></span><span class="seta">›</span></a></li>
+    <li><a class="item" href="{{ url_for('confissao') }}"><span class="ic">{{ icone('confissao') }}</span><span><b>Marcar confissão</b><span class="s">Escolha um horário com o padre</span></span><span class="seta">›</span></a></li>
+    <li><a class="item" href="{{ url_for('padroeira') }}"><span class="ic">{{ icone('rosa') }}</span><span><b>Nossa padroeira</b><span class="s">A vida de Santa Terezinha e curiosidades</span></span><span class="seta">›</span></a></li>
+  </ul>
+  <ul class="lista">
+    {% for l in links %}
+    <li><a class="item" href="{{ l.url }}" target="_blank" rel="noopener"><span class="ic">{{ icone(l.icone) }}</span><span><b>{{ l.titulo }}</b><span class="s">{{ l.sub }}</span></span><span class="seta">↗</span></a></li>
+    {% endfor %}
+  </ul>
+</main>
+<footer class="wrap"><a href="{{ url_for('login', area='admin') }}">Acesso da secretaria</a></footer>
+{% endblock %}

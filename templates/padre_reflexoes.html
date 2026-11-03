@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Reflexões{% endblock %}
+{% block body %}
+{% set aba = 'reflexoes' %}{% include "_nav.html" %}
+<main class="wrap wide page">
+  <h1>Reflexões do padre</h1>
+  <p class="dica">Uma reflexão por dia. Se escolher uma data futura, ela fica agendada e só aparece no site naquele dia. No site, mostramos sempre a mais recente já liberada.</p>
+  <div class="grid2">
+    <section class="painel-box">
+      <h2>Nova reflexão</h2>
+      <form method="post">
+        <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="acao" value="salvar">
+        <div class="campo"><label for="day">Data</label><input type="date" id="day" name="day" value="{{ hoje.isoformat() }}" required style="width:100%;font:inherit;padding:12px 13px;border:1.5px solid #B9BED0;border-radius:9px"></div>
+        <div class="campo"><label for="title">Título</label><input type="text" id="title" name="title" maxlength="140" required></div>
+        <div class="campo"><label for="text">Reflexão</label><textarea id="text" name="text" maxlength="6000" style="min-height:240px" required></textarea></div>
+        <button class="btn" type="submit">Publicar</button>
+      </form>
+    </section>
+    <section>
+      {% for r in items %}
+      <div class="aviso-item {{ '' if r.day <= hoje else 'oculto' }}">
+        <details>
+          <summary style="cursor:pointer"><b>{{ r.title }}</b> <small>· {{ r.day.strftime('%d/%m/%Y') }}{{ ' · agendada' if r.day > hoje }}</small></summary>
+          <form method="post" style="margin-top:12px">
+            <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="id" value="{{ r.id }}">
+            <div class="campo"><label for="d{{ r.id }}">Data</label><input type="date" id="d{{ r.id }}" name="day" value="{{ r.day.isoformat() }}" required style="width:100%;font:inherit;padding:12px 13px;border:1.5px solid #B9BED0;border-radius:9px"></div>
+            <div class="campo"><label for="t{{ r.id }}">Título</label><input type="text" id="t{{ r.id }}" name="title" maxlength="140" value="{{ r.title }}" required></div>
+            <div class="campo"><label for="x{{ r.id }}">Reflexão</label><textarea id="x{{ r.id }}" name="text" maxlength="6000" style="min-height:200px" required>{{ r.text }}</textarea></div>
+            <div class="linha">
+              <button class="btn peq" name="acao" value="editar" type="submit">Salvar alterações</button>
+              <button class="btn perigo peq" name="acao" value="apagar" type="submit" onclick="return confirm('Apagar esta reflexão?')">Apagar</button>
+            </div>
+          </form>
+        </details>
+      </div>
+      {% else %}<p class="dica">Nenhuma reflexão ainda. Escreva a primeira ao lado.</p>{% endfor %}
+    </section>
+  </div>
+</main>
+{% endblock %}
