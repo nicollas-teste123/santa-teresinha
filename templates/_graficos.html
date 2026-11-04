@@ -14,3 +14,20 @@
   <div class="t"><i style="width:{{ w }}%"></i></div>
 </div>
 {%- endmacro %}
+{% macro kpi(k) -%}
+<div class="kpi">
+  <small>{{ k.label }}</small>
+  <b>{{ k.valor }}</b>
+  {% if k.sub %}<span class="sub">{{ k.sub }}</span>{% endif %}
+  {% if k.delta %}<span class="delta {{ k.delta.cls }}">{{ k.delta.txt }}</span>{% endif %}
+</div>
+{%- endmacro %}
+{% macro barras2(g, rotA, rotB) -%}
+<div class="grafico">
+  <div class="gmax">{{ g.max|brlk }}</div>
+  <div class="gbarras">
+    {% for it in g['items'] %}<div class="gcol g2" title="{{ it.label }} · {{ rotA }}: {{ it.a|brl }} · {{ rotB }}: {{ it.b|brl }}"><i class="a {{ 'ref' if it.ref }}" style="height:{{ it.pa }}%"></i><i class="b" style="height:{{ it.pb }}%"></i></div>{% endfor %}
+  </div>
+  <div class="grot">{% for it in g['items'] %}<span>{{ it.label }}</span>{% endfor %}</div>
+</div>
+{%- endmacro %}

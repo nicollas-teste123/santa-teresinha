@@ -1,3 +1,4 @@
+import csv
 import io
 import os
 import re
@@ -10,7 +11,7 @@ from functools import wraps
 from zoneinfo import ZoneInfo
 
 import segno
-from flask import (Flask, abort, flash, jsonify, redirect, render_template,
+from flask import (Flask, Response, abort, flash, jsonify, redirect, render_template,
                    request, session, url_for)
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError
@@ -22,6 +23,8 @@ TZ = ZoneInfo("America/Sao_Paulo")
 DIAS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
 LUGARES = [("matriz", "Matriz"), ("santa_luzia", "Capela Santa Luzia")]
 LUGAR_LABEL = dict(LUGARES)
+MESES_LONGOS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto",
+                "setembro", "outubro", "novembro", "dezembro"]
 MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 
 app = Flask(__name__)
@@ -532,29 +535,8 @@ def padre_root():
 @app.route(f"/{AREA}/painel")
 @area_required
 def painel(area, user):
-    confirmed = Donation.query.filter_by(status="confirmado").all()
-    total = sum((d.amount for d in confirmed), Decimal("0"))
-    pend = Donation.query.filter_by(status="gerado").count()
-    today = datetime.now(TZ).date()
-    meses = []
-    y, m = today.year, today.month
-    for _ in range(6):
-        meses.append((y, m))
-        m -= 1
-        if m == 0:
-            y, m = y - 1, 12
-    meses.reverse()
-    soma = {k: Decimal("0") for k in meses}
-    for d in confirmed:
-        ld = d.created_at.replace(tzinfo=timezone.utc).astimezone(TZ)
-        if (ld.year, ld.month) in soma:
-            soma[(ld.year, ld.month)] += d.amount
-    maior = max(soma.values()) or Decimal("1")
-    barras = [(f"{MESES[m-1]}/{str(y)[2:]}", v, int(v / maior * 100)) for (y, m), v in soma.items()]
-    ultimas = Donation.query.order_by(Donation.created_at.desc()).limit(5).all()
-    return render_template("painel.html", area=area, user=user, total=total, qtd=len(confirmed),
-                           pend=pend, barras=barras, ultimas=ultimas,
-                           media=(total / len(confirmed)) if confirmed else Decimal("0"))
+    # Não há mais tela de resumo: o padre vai direto ao Financeiro e a secretaria aos Avisos.
+    return redirect(url_for("financeiro") if area == "padre" else url_for("avisos", area="admin"))
 
 
 @app.route(f"/{AREA}/avisos", methods=["GET", "POST"])
@@ -730,31 +712,20 @@ def padre_reflexoes(area, user):
     return render_template("padre_reflexoes.html", area=area, user=user, items=items, hoje=hoje)
 
 
-def pending_masses(days=21):
-    """Missas já realizadas (últimos `days` dias) cuja coleta ainda não foi registrada."""
-    now = datetime.now(TZ)
-    start = now.date() - timedelta(days=days)
-    cands = []
-    slots = MassSlot.query.all()
-    for i in range(days + 1):
-        d = now.date() - timedelta(days=i)
-        for sl in slots:
-            if sl.weekday == d.weekday():
-                cands.append((d, sl.time, sl.note, sl.lugar))
-    for e in ExtraMass.query.filter(ExtraMass.day >= start, ExtraMass.day <= now.date()).all():
-        cands.append((e.day, e.time, e.note, e.lugar))
-    done = {k for (k,) in db.session.query(FinanceEntry.mass_key).filter(FinanceEntry.mass_key.isnot(None),
-                                                                         FinanceEntry.day >= start).all()}
-    out = [c for c in cands if mass_dt(c[0], c[1]) <= now and f"{c[0].isoformat()}|{c[1]}" not in done]
-    return sorted(out, key=lambda c: mass_dt(c[0], c[1]), reverse=True)
+def mass_label(d, t=None):
+    dia = DIAS[d.weekday()][:3]
+    return f"{dia} {t}" if t else dia
 
 
-def mass_label(d, t):
-    return f"{DIAS[d.weekday()][:3]} {t}"
+def parse_hora(raw):
+    m = re.fullmatch(r"(\d{1,2}):(\d{2})", (raw or "").strip())
+    if not m or int(m[1]) > 23 or int(m[2]) > 59:
+        return None
+    return f"{int(m[1]):02d}:{m[2]}"
 
 
 def finance_rows(start, end):
-    """Lançamentos do padre + doações confirmadas pelo site (Pix), como (dia, categoria, valor, forma, missa)."""
+    """Lançamentos do padre + doações confirmadas pelo site (Pix), como (dia, categoria, valor, forma, missa, local)."""
     rows = [(e.day, e.category, e.amount, e.method, e.mass_label, e.lugar)
             for e in FinanceEntry.query.filter(FinanceEntry.day >= start, FinanceEntry.day <= end).all()]
     for d in Donation.query.filter_by(status="confirmado").all():
@@ -764,64 +735,159 @@ def finance_rows(start, end):
     return rows
 
 
+def soma(rs, ano, mes=None, ate=None, cat=None, propria=False):
+    t = Decimal("0")
+    for d, c, v, *_ in rs:
+        if d.year != ano or (mes and d.month != mes) or (ate and d.month > ate):
+            continue
+        if (cat and c != cat) or (propria and c == "repasse"):
+            continue
+        t += v
+    return t
+
+
+def variacao(cur, prev, ref=""):
+    if not prev:
+        return {"txt": "sem base de comparação", "cls": "flat", "pct": None}
+    p = float((cur - prev) / prev * 100)
+    cls = "up" if p > 0.05 else "down" if p < -0.05 else "flat"
+    seta = {"up": "▲", "down": "▼", "flat": "■"}[cls]
+    return {"txt": f"{seta} {abs(p):.1f}%".replace(".", ",") + (f" vs {ref}" if ref else ""), "cls": cls, "pct": p}
+
+
+def mes_anterior(ano, mes):
+    return (ano, mes - 1) if mes > 1 else (ano - 1, 12)
+
+
+def ultimo_dia(ano, mes):
+    return date(ano + (mes == 12), mes % 12 + 1, 1) - timedelta(days=1)
+
+
 def chart(items, avg=None):
-    """items: [(rótulo, valor, é_o_último)] -> estrutura pronta para o gráfico de barras."""
+    """items: [(rótulo, valor, é_o_destaque)] -> estrutura pronta para o gráfico de barras."""
     top = max([v for _, v, _ in items] + ([avg] if avg else []) + [Decimal("1")])
     return {"items": [{"label": l, "value": v, "pct": int(v / top * 100), "last": last} for l, v, last in items],
             "avg": avg, "avg_pct": int(avg / top * 100) if avg else None, "max": top}
+
+
+def chart2(labels, a, b, destaque):
+    top = max(list(a) + list(b) + [Decimal("1")])
+    return {"max": top, "items": [{"label": l, "a": x, "b": y, "pa": int(x / top * 100), "pb": int(y / top * 100),
+                                   "ref": i + 1 == destaque} for i, (l, x, y) in enumerate(zip(labels, a, b))]}
 
 
 def saturday_of(d):
     return d - timedelta(days=(d.weekday() - 5) % 7)
 
 
-@app.route("/padre/financeiro")
-@padre_only
-def financeiro(area, user):
+def periodo_ref():
     hoje = datetime.now(TZ).date()
     try:
         ano = min(max(int(request.args.get("ano", hoje.year)), 2000), hoje.year + 1)
     except ValueError:
         ano = hoje.year
+    padrao = hoje.month if ano == hoje.year else 12
+    try:
+        mes = int(request.args.get("mes", padrao))
+    except ValueError:
+        mes = padrao
+    if not 1 <= mes <= 12:
+        mes = padrao
     local = request.args.get("local", "")
-    rows = finance_rows(date(ano - 1, 1, 1), date(ano, 12, 31))
-    por_local_tot = {k: sum((r[2] for r in rows if r[0].year == ano and r[5] == k), Decimal("0")) for k, _ in LUGARES}
-    if local in LUGAR_LABEL:
-        rows = [r for r in rows if r[5] == local]
-    else:
-        local = ""
-    yr = [r for r in rows if r[0].year == ano]
-    total = sum((r[2] for r in yr), Decimal("0"))
-    own = [r for r in yr if r[1] != "repasse"]
-    total_own = sum((r[2] for r in own), Decimal("0"))
+    return hoje, ano, mes, (local if local in LUGAR_LABEL else "")
 
-    # dízimo por fim de semana (sábado + domingo), 14 fins de semana
-    fim = hoje if ano == hoje.year else date(ano, 12, 31)
-    ultimo = saturday_of(fim)
+
+@app.route("/padre/financeiro")
+@padre_only
+def financeiro(area, user):
+    hoje, ano, mes, local = periodo_ref()
+    rows_all = finance_rows(date(ano - 1, 1, 1), date(ano, 12, 31))
+    rows = [r for r in rows_all if not local or r[5] == local]
+    yr = [r for r in rows if r[0].year == ano]
+    total = soma(rows, ano)
+    total_own = soma(rows, ano, propria=True)
+    own = [r for r in yr if r[1] != "repasse"]
+    pano, pmes = mes_anterior(ano, mes)
+    nome_mes = MESES_LONGOS[mes - 1]
+
+    # ---------- indicadores (mês de referência)
+    own_mes, own_prev = soma(rows, ano, mes, propria=True), soma(rows, pano, pmes, propria=True)
+    diz_mes, diz_prev = soma(rows, ano, mes, cat="dizimo"), soma(rows, pano, pmes, cat="dizimo")
+    col = [r for r in rows if r[1] == "coleta" and r[2] > 0]
+
+    def colstats(a, m):
+        vs = [r[2] for r in col if r[0].year == a and r[0].month == m]
+        return sum(vs, Decimal("0")), len(vs)
+    col_mes, n_col = colstats(ano, mes)
+    col_prev, n_prev = colstats(pano, pmes)
+    media_mes = col_mes / n_col if n_col else Decimal("0")
+    media_prev = col_prev / n_prev if n_prev else Decimal("0")
+    acum, acum_ant = soma(rows, ano, ate=mes, propria=True), soma(rows, ano - 1, ate=mes, propria=True)
+    mesmo_ant = soma(rows, ano - 1, mes, propria=True)
+
+    fim_ref = min(ultimo_dia(ano, mes), hoje)
+    ultimo = saturday_of(fim_ref)
     dz = {}
     for r in rows:
         if r[1] == "dizimo":
             w = saturday_of(r[0])
             dz[w] = dz.get(w, Decimal("0")) + r[2]
+    m4 = sum((dz.get(ultimo - timedelta(weeks=i), Decimal("0")) for i in range(4)), Decimal("0")) / 4
+    m4_ant = sum((dz.get(ultimo - timedelta(weeks=i), Decimal("0")) for i in range(4, 8)), Decimal("0")) / 4
+    ate_graf = hoje.month if ano == hoje.year else 12
+    por_mes = {m: soma(rows, ano, m, propria=True) for m in range(1, ate_graf + 1)}
+    melhor_m = max(por_mes, key=por_mes.get)
+    p_diz = float(diz_mes / own_mes * 100) if own_mes else 0.0
+    p_diz_ant = float(diz_prev / own_prev * 100) if own_prev else 0.0
+
+    kpis = [
+        {"label": f"Receita própria · {nome_mes}", "valor": brl(own_mes), "sub": "",
+         "delta": variacao(own_mes, own_prev, "mês anterior")},
+        {"label": f"Dízimos · {nome_mes}", "valor": brl(diz_mes), "sub": "", "delta": variacao(diz_mes, diz_prev, "mês anterior")},
+        {"label": f"Coletas das missas · {nome_mes}", "valor": brl(col_mes),
+         "sub": f"{n_col} coleta(s) registrada(s)", "delta": variacao(col_mes, col_prev, "mês anterior")},
+        {"label": "Média por coleta de missa", "valor": brl(media_mes), "sub": f"mês anterior: {brl(media_prev)}",
+         "delta": variacao(media_mes, media_prev, "mês anterior")},
+        {"label": f"Acumulado de {ano} (até {MESES[mes-1]})", "valor": brl(acum), "sub": f"{ano - 1}: {brl(acum_ant)}",
+         "delta": variacao(acum, acum_ant, f"mesmo período de {ano - 1}")},
+        {"label": f"Receita própria vs {MESES[mes-1]}/{ano - 1}", "valor": brl(own_mes), "sub": f"{MESES[mes-1]}/{ano - 1}: {brl(mesmo_ant)}",
+         "delta": variacao(own_mes, mesmo_ant, f"{MESES[mes-1]}/{ano - 1}")},
+        {"label": "Dízimo médio por fim de semana", "valor": brl(m4), "sub": "últimos 4 fins de semana",
+         "delta": variacao(m4, m4_ant, "4 fins de semana anteriores")},
+        {"label": f"Melhor mês de {ano}", "valor": brl(por_mes[melhor_m]), "sub": MESES_LONGOS[melhor_m - 1].capitalize(), "delta": None},
+        {"label": "Dízimo na receita própria", "valor": pc(p_diz), "sub": f"mês anterior: {pc(p_diz_ant)}", "delta": None},
+    ]
+
+    # ---------- comparativos
+    g_anos = chart2([m for m in MESES],
+                    [soma(rows, ano, m, propria=True) for m in range(1, 13)],
+                    [soma(rows, ano - 1, m, propria=True) for m in range(1, 13)], mes)
+    comp_cats = []
+    for k, nome, obs in CATS:
+        prev, cur = soma(rows, pano, pmes, cat=k), soma(rows, ano, mes, cat=k)
+        if prev or cur:
+            comp_cats.append({"nome": nome, "prev": prev, "cur": cur, "d": variacao(cur, prev)})
+    tot_prev, tot_cur = soma(rows, pano, pmes), soma(rows, ano, mes)
+    comp_total = {"prev": tot_prev, "cur": tot_cur, "d": variacao(tot_cur, tot_prev)}
+    comp_locais = []
+    if not local:
+        for k, nome in LUGARES:
+            rl = [r for r in rows_all if r[5] == k]
+            prev, cur = soma(rl, pano, pmes, propria=True), soma(rl, ano, mes, propria=True)
+            comp_locais.append({"nome": nome, "prev": prev, "cur": cur, "d": variacao(cur, prev), "ano": soma(rl, ano, propria=True)})
+
+    # ---------- painéis do ano
     sabados = [ultimo - timedelta(weeks=i) for i in range(13, -1, -1)]
     do_ano = {w: v for w, v in dz.items() if w.year == ano}
     media_dz = None
     if do_ano:
-        n = (ultimo - min(do_ano)).days // 7 + 1
-        media_dz = sum(do_ano.values()) / max(n, 1)
+        media_dz = sum(do_ano.values()) / max((ultimo - min(do_ano)).days // 7 + 1, 1)
     g_dizimo = chart([(w.strftime("%d/%m"), dz.get(w, Decimal("0")), w == ultimo) for w in sabados], media_dz)
+    g_mensal = chart([(f"{MESES[m-1]}/{str(ano)[2:]}", por_mes[m], m == mes) for m in range(1, ate_graf + 1)])
 
-    # entradas por mês (receita própria)
-    ate = hoje.month if ano == hoje.year else 12
-    mensal = []
-    for m in range(1, ate + 1):
-        mensal.append((f"{MESES[m-1]}/{str(ano)[2:]}", sum((r[2] for r in own if r[0].month == m), Decimal("0")), m == ate))
-    g_mensal = chart(mensal)
-
-    # origem e forma de recebimento
     cats = []
     for k, nome, obs in CATS:
-        v = sum((r[2] for r in yr if r[1] == k), Decimal("0"))
+        v = soma(rows, ano, cat=k)
         if v > 0:
             cats.append({"nome": nome, "obs": obs, "v": v, "p": float(v / total * 100) if total else 0})
     topo = max([c["v"] for c in cats] + [Decimal("1")])
@@ -838,31 +904,106 @@ def financeiro(area, user):
         m["w"] = int(m["v"] / topo_m * 100)
     metodos.sort(key=lambda m: m["v"], reverse=True)
 
-    # coletas das missas
     coletas = [r for r in yr if r[1] == "coleta" and r[2] > 0]
     media_coleta = (sum((r[2] for r in coletas), Decimal("0")) / len(coletas)) if coletas else Decimal("0")
     q_ult = FinanceEntry.query.filter(FinanceEntry.category == "coleta", FinanceEntry.amount > 0,
-                                      FinanceEntry.day <= date(ano, 12, 31))
+                                      FinanceEntry.day <= ultimo_dia(ano, mes))
     if local:
         q_ult = q_ult.filter(FinanceEntry.lugar == local)
-    ult = (q_ult
-           .order_by(FinanceEntry.day.desc(), FinanceEntry.id.desc()).limit(12).all())[::-1]
-    g_coletas = chart([((f"{e.day.strftime('%d/%m')} {e.mass_label.split()[-1]}" if e.mass_label else e.day.strftime('%d/%m')),
-                        e.amount, i == len(ult) - 1) for i, e in enumerate(ult)], media_coleta or None) if ult else None
+    ult = q_ult.order_by(FinanceEntry.day.desc(), FinanceEntry.id.desc()).limit(12).all()[::-1]
+
+    def rot(e):
+        hora = e.mass_label.split()[-1] if e.mass_label and ":" in e.mass_label else ""
+        return f"{e.day.strftime('%d/%m')} {hora}".strip()
+    g_coletas = chart([(rot(e), e.amount, i == len(ult) - 1) for i, e in enumerate(ult)], media_coleta or None) if ult else None
     por_missa = {}
     for r in coletas:
-        k = (r[4] or "Sem missa indicada") + (f" · {LUGAR_LABEL[r[5]]}" if not local else "")
+        k = (r[4] or "Sem horário") + (f" · {LUGAR_LABEL[r[5]]}" if not local else "")
         n, t = por_missa.get(k, (0, Decimal("0")))
         por_missa[k] = (n + 1, t + r[2])
     tabela = sorted(((k, n, t, t / n) for k, (n, t) in por_missa.items()), key=lambda x: x[2], reverse=True)
 
-    topo_l = max(list(por_local_tot.values()) + [Decimal("1")])
-    locais = [{"nome": LUGAR_LABEL[k], "v": v, "p": float(v / sum(por_local_tot.values()) * 100) if sum(por_local_tot.values()) else 0,
-               "w": int(v / topo_l * 100)} for k, v in por_local_tot.items() if v > 0]
-    return render_template("financeiro.html", area=area, user=user, ano=ano, local=local, locais=locais, anos=range(hoje.year, 2023, -1),
-                           total=total, total_own=total_own, media_coleta=media_coleta, n_coletas=len(coletas),
-                           dizimo_ano=sum(do_ano.values(), Decimal("0")), g_dizimo=g_dizimo, g_mensal=g_mensal,
-                           cats=cats, metodos=metodos, g_coletas=g_coletas, tabela=tabela, hoje=hoje)
+    return render_template("financeiro.html", area=area, user=user, ano=ano, mes=mes, local=local,
+                           nome_mes=nome_mes, anos=range(hoje.year + 1, 2023, -1), meses_nomes=MESES_LONGOS,
+                           total=total, total_own=total_own, kpis=kpis, g_anos=g_anos, comp_cats=comp_cats,
+                           comp_total=comp_total, comp_locais=comp_locais, g_dizimo=g_dizimo, g_mensal=g_mensal,
+                           cats=cats, metodos=metodos, g_coletas=g_coletas, tabela=tabela, n_coletas=len(coletas),
+                           ant_label=f"{MESES[pmes-1]}/{pano}", cur_label=f"{MESES[mes-1]}/{ano}", hoje=hoje)
+
+
+def csv_seguro(txt):
+    txt = txt or ""
+    return "'" + txt if txt[:1] in ("=", "+", "-", "@") else txt
+
+
+@app.route("/padre/financeiro/relatorio")
+@padre_only
+def relatorio(area, user):
+    hoje, ano, mes, local = periodo_ref()
+    pano, pmes = mes_anterior(ano, mes)
+    ini, fim = date(ano, mes, 1), ultimo_dia(ano, mes)
+    q = FinanceEntry.query.filter(FinanceEntry.day >= ini, FinanceEntry.day <= fim)
+    if local:
+        q = q.filter_by(lugar=local)
+    det = [{"day": e.day, "lugar": e.lugar, "cat": e.category, "catn": CAT_LABEL[e.category], "metodo": METHOD_LABEL[e.method],
+            "v": e.amount, "mass": e.mass_label,
+            "desc": " · ".join(x for x in (e.mass_label if e.category == "coleta" else None, e.note) if x)}
+           for e in q.order_by(FinanceEntry.day, FinanceEntry.id).all()]
+    if local in ("", "matriz"):
+        for d in Donation.query.filter_by(status="confirmado").all():
+            ld = d.created_at.replace(tzinfo=timezone.utc).astimezone(TZ).date()
+            if ini <= ld <= fim:
+                det.append({"day": ld, "lugar": "matriz", "cat": "doacao", "catn": CAT_LABEL["doacao"], "metodo": "Pix",
+                            "v": d.amount, "mass": None, "desc": "Doação pelo site"})
+        det.sort(key=lambda x: x["day"])
+
+    if request.args.get("csv"):
+        buf = io.StringIO()
+        w = csv.writer(buf, delimiter=";")
+        w.writerow(["Data", "Local", "Categoria", "Descrição", "Forma", "Valor (R$)"])
+        for x in det:
+            w.writerow([x["day"].strftime("%d/%m/%Y"), LUGAR_LABEL[x["lugar"]], x["catn"], csv_seguro(x["desc"]),
+                        x["metodo"], f"{x['v']:.2f}".replace(".", ",")])
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": f"attachment; filename=financeiro-{ano}-{mes:02d}.csv"})
+
+    total = sum((x["v"] for x in det), Decimal("0"))
+    propria = sum((x["v"] for x in det if x["cat"] != "repasse"), Decimal("0"))
+    rows_all = finance_rows(date(ano - 1, 1, 1), date(ano, 12, 31))
+    rows = [r for r in rows_all if not local or r[5] == local]
+    prev_own, mesmo_own = soma(rows, pano, pmes, propria=True), soma(rows, ano - 1, mes, propria=True)
+    por_cat = []
+    for k, nome, obs in CATS:
+        v = sum((x["v"] for x in det if x["cat"] == k), Decimal("0"))
+        if v:
+            por_cat.append({"nome": nome, "obs": obs, "v": v, "p": float(v / total * 100) if total else 0,
+                            "prev": soma(rows, pano, pmes, cat=k), "d": variacao(v, soma(rows, pano, pmes, cat=k))})
+    por_forma = []
+    for k, nome in METHODS:
+        v = sum((x["v"] for x in det if x["cat"] != "repasse" and x["metodo"] == nome), Decimal("0"))
+        if v:
+            por_forma.append({"nome": nome, "v": v, "p": float(v / propria * 100) if propria else 0})
+    por_local = []
+    if not local:
+        for k, nome in LUGARES:
+            v = sum((x["v"] for x in det if x["lugar"] == k and x["cat"] != "repasse"), Decimal("0"))
+            if v:
+                por_local.append({"nome": nome, "v": v, "p": float(v / propria * 100) if propria else 0})
+    fins = {}
+    for x in det:
+        if x["cat"] == "dizimo":
+            sab = saturday_of(x["day"])
+            fins[sab] = fins.get(sab, Decimal("0")) + x["v"]
+    coletas = [x for x in det if x["cat"] == "coleta" and x["v"] > 0]
+    tot_col = sum((x["v"] for x in coletas), Decimal("0"))
+    return render_template("relatorio.html", area=area, user=user, ano=ano, mes=mes, local=local,
+                           titulo=f"{MESES_LONGOS[mes - 1].capitalize()} de {ano}", total=total, propria=propria,
+                           repasse=total - propria, por_cat=por_cat, por_forma=por_forma, por_local=por_local,
+                           fins=sorted(fins.items()), coletas=coletas, tot_col=tot_col, det=det,
+                           media_col=(tot_col / len(coletas)) if coletas else Decimal("0"),
+                           d_prev=variacao(propria, prev_own), prev_own=prev_own, ant_label=f"{MESES[pmes-1]}/{pano}",
+                           d_ano=variacao(propria, mesmo_own), mesmo_own=mesmo_own, ano_label=f"{MESES[mes-1]}/{ano - 1}",
+                           gerado=datetime.now(TZ).strftime("%d/%m/%Y %H:%M"), paroquia=content.PAROQUIA)
 
 
 @app.route("/padre/financeiro/lancamentos", methods=["GET", "POST"])
@@ -873,21 +1014,7 @@ def lancamentos(area, user):
         acao = request.form.get("acao")
         metodo = request.form.get("method")
         metodo = metodo if metodo in METHOD_LABEL else "nao_informado"
-        if acao in ("coleta", "dispensar"):
-            pend = {f"{d.isoformat()}|{t}": (d, t, n, lg) for d, t, n, lg in pending_masses()}
-            chave = request.form.get("mass_key", "")
-            valor = Decimal("0.00") if acao == "dispensar" else parse_money(request.form.get("amount"), "0.01", "1000000")
-            if chave not in pend:
-                flash("Essa missa já foi registrada ou saiu da lista.", "erro")
-            elif valor is None:
-                flash("Informe um valor válido para a coleta.", "erro")
-            else:
-                d, t, n, lg = pend[chave]
-                db.session.add(FinanceEntry(day=d, category="coleta", amount=valor, method=metodo, note=n, lugar=lg,
-                                            mass_label=mass_label(d, t), mass_key=chave, created_by=user.username))
-                db.session.commit()
-                flash("Coleta registrada." if valor > 0 else "Missa marcada como sem coleta.", "ok")
-        elif acao in ("novo", "editar"):
+        if acao in ("novo", "editar"):
             try:
                 dia = date.fromisoformat(request.form.get("day", ""))
             except ValueError:
@@ -897,18 +1024,21 @@ def lancamentos(area, user):
             nota = clean(request.form.get("note"), 160) or None
             lg = request.form.get("lugar")
             lg = lg if lg in LUGAR_LABEL else "matriz"
+            hora = parse_hora(request.form.get("hora"))
             if not dia or dia > hoje or cat not in CAT_LABEL or valor is None:
                 flash("Confira a data (não pode ser futura), a categoria e o valor.", "erro")
-            elif acao == "novo":
-                db.session.add(FinanceEntry(day=dia, category=cat, amount=valor, method=metodo, note=nota, lugar=lg, created_by=user.username))
-                db.session.commit()
-                flash("Lançamento registrado.", "ok")
             else:
-                e = db.session.get(FinanceEntry, int(request.form.get("id") or 0))
-                if e:
-                    e.day, e.category, e.amount, e.method, e.note, e.lugar = dia, cat, valor, metodo, nota, lg
-                    db.session.commit()
-                    flash("Lançamento atualizado.", "ok")
+                rotulo = mass_label(dia, hora) if cat == "coleta" else None
+                if acao == "novo":
+                    db.session.add(FinanceEntry(day=dia, category=cat, amount=valor, method=metodo, note=nota, lugar=lg,
+                                                mass_label=rotulo, created_by=user.username))
+                    flash("Coleta da missa registrada." if cat == "coleta" else "Lançamento registrado.", "ok")
+                else:
+                    e = db.session.get(FinanceEntry, int(request.form.get("id") or 0))
+                    if e:
+                        e.day, e.category, e.amount, e.method, e.note, e.lugar, e.mass_label = dia, cat, valor, metodo, nota, lg, rotulo
+                        flash("Lançamento atualizado.", "ok")
+                db.session.commit()
         elif acao == "apagar":
             e = db.session.get(FinanceEntry, int(request.form.get("id") or 0))
             if e:
@@ -927,7 +1057,6 @@ def lancamentos(area, user):
         flocal = ""
     items = q.order_by(FinanceEntry.day.desc(), FinanceEntry.id.desc()).limit(150).all()
     return render_template("lancamentos.html", area=area, user=user, hoje=hoje, cats=CATS, methods=METHODS,
-                           pendentes=[(d, t, n, f"{d.isoformat()}|{t}", lg) for d, t, n, lg in pending_masses()],
                            items=items, filtro=filtro, flocal=flocal, CAT_LABEL=CAT_LABEL, METHOD_LABEL=METHOD_LABEL)
 
 

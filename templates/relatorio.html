@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from "_graficos.html" import hbarra %}
+{% block title %}Relatório financeiro · {{ titulo }}{% endblock %}
+{% block body %}
+{% set aba = 'relatorio' %}{% include "_nav.html" %}
+<main class="wrap wide page rel">
+  <div class="linha no-print" style="margin-bottom:18px">
+    <a class="btn sec" href="{{ url_for('financeiro', ano=ano, mes=mes, local=local or None) }}">‹ Voltar ao financeiro</a>
+    <button class="btn" type="button" onclick="window.print()">Imprimir / salvar em PDF</button>
+    <a class="btn sec" href="{{ url_for('relatorio', ano=ano, mes=mes, local=local or None, csv=1) }}">Baixar planilha (CSV)</a>
+  </div>
+
+  <header class="rel-topo">
+    <p class="dica" style="margin:0">{{ paroquia }}</p>
+    <h1 style="margin:2px 0">Relatório financeiro · {{ titulo }}</h1>
+    <p class="dica" style="margin:0">{% if local %}{{ LUGAR[local] }}{% else %}Matriz e Capela Santa Luzia{% endif %} · gerado em {{ gerado }}</p>
+  </header>
+
+  <div class="cards" style="margin-top:18px">
+    <div class="num"><small>Total de entradas</small><b>{{ total|brl }}</b></div>
+    <div class="num"><small>Receita própria</small><b>{{ propria|brl }}</b></div>
+    <div class="num"><small>Coletas de repasse</small><b>{{ repasse|brl }}</b></div>
+    <div class="num"><small>Média por coleta de missa</small><b>{{ media_col|brl }}</b></div>
+  </div>
+
+  <h2>Comparativo da receita própria</h2>
+  <table class="comp">
+    <tr><th>Referência</th><th>Valor</th><th>Variação do mês</th></tr>
+    <tr><td>{{ ant_label }} (mês anterior)</td><td>{{ prev_own|brl }}</td><td><span class="delta {{ d_prev.cls }}">{{ d_prev.txt }}</span></td></tr>
+    <tr><td>{{ ano_label }} (mesmo mês do ano anterior)</td><td>{{ mesmo_own|brl }}</td><td><span class="delta {{ d_ano.cls }}">{{ d_ano.txt }}</span></td></tr>
+  </table>
+
+  <div class="grid2" style="margin-top:6px">
+    <section>
+      <h2>Por categoria</h2>
+      {% for c in por_cat %}
+      <div class="hb"><div class="l"><span>{{ c.nome }}{% if c.obs %} <small>({{ c.obs }})</small>{% endif %}</span><span>{{ c.v|brl }} <small>· {{ c.p|pc }}</small></span></div>
+      <div class="l"><small>vs mês anterior</small><span class="delta {{ c.d.cls }}">{{ c.d.txt }}</span></div></div>
+      {% else %}<p class="dica">Sem entradas neste mês.</p>{% endfor %}
+    </section>
+    <section>
+      <h2>Como foram recebidas</h2>
+      {% for f in por_forma %}<div class="hb"><div class="l"><span>{{ f.nome }}</span><span>{{ f.v|brl }} <small>· {{ f.p|pc }}</small></span></div></div>{% else %}<p class="dica">Sem dados.</p>{% endfor %}
+      {% if por_local %}
+      <h2 style="margin-top:20px">Por local</h2>
+      {% for l in por_local %}<div class="hb"><div class="l"><span>{{ l.nome }}</span><span>{{ l.v|brl }} <small>· {{ l.p|pc }}</small></span></div></div>{% endfor %}
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="grid2">
+    <section>
+      <h2>Dízimos por fim de semana</h2>
+      {% if fins %}
+      <table><tr><th>Fim de semana (sábado)</th><th>Valor</th></tr>
+        {% for sab, v in fins %}<tr><td>{{ sab.strftime('%d/%m/%Y') }}</td><td>{{ v|brl }}</td></tr>{% endfor %}
+      </table>
+      {% else %}<p class="dica">Sem dízimos neste mês.</p>{% endif %}
+    </section>
+    <section>
+      <h2>Coletas das missas</h2>
+      {% if coletas %}
+      <table><tr><th>Data</th><th>Missa</th><th>Local</th><th>Valor</th></tr>
+        {% for x in coletas %}<tr><td>{{ x.day.strftime('%d/%m') }}</td><td>{{ x.mass or '—' }}</td><td>{{ LUGAR[x.lugar] }}</td><td>{{ x.v|brl }}</td></tr>{% endfor %}
+        <tr style="font-weight:700"><td colspan="3">Total · {{ coletas|length }} coleta(s)</td><td>{{ tot_col|brl }}</td></tr>
+      </table>
+      {% else %}<p class="dica">Sem coletas registradas neste mês.</p>{% endif %}
+    </section>
+  </div>
+
+  <h2>Todos os lançamentos do mês</h2>
+  {% if det %}
+  <div class="scroll"><table>
+    <tr><th>Data</th><th>Local</th><th>Categoria</th><th>Descrição</th><th>Forma</th><th style="text-align:right">Valor</th></tr>
+    {% for x in det %}<tr><td>{{ x.day.strftime('%d/%m') }}</td><td>{{ LUGAR[x.lugar] }}</td><td>{{ x.catn }}</td><td>{{ x.desc }}</td><td>{{ x.metodo }}</td><td style="text-align:right">{{ x.v|brl }}</td></tr>{% endfor %}
+    <tr style="font-weight:700"><td colspan="5">Total</td><td style="text-align:right">{{ total|brl }}</td></tr>
+  </table></div>
+  {% else %}<p class="dica">Nenhum lançamento neste mês.</p>{% endif %}
+
+  <div class="assinaturas"><div>Pároco</div><div>Secretaria / Tesouraria</div></div>
+</main>
+{% endblock %}

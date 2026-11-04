@@ -189,3 +189,31 @@ th{color:var(--muted);font-weight:600;font-size:.82rem}
 .pend form{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:8px}
 .pend input[type=text]{width:120px}
 .pend select{width:auto}
+
+/* indicadores e comparativos */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:3px}
+.kpi small{color:var(--muted);font-weight:600;font-size:.82rem}
+.kpi b{font-family:var(--serif);font-size:1.8rem;color:var(--navy);line-height:1.1}
+.kpi .sub{color:var(--muted);font-size:.8rem}
+.delta{font-size:.8rem;font-weight:700;white-space:nowrap}
+.delta.up{color:var(--ok)} .delta.down{color:var(--err)} .delta.flat{color:var(--muted)}
+.gcol.g2{gap:2px}
+.gcol.g2 i{width:50%}
+.gcol.g2 i.b{background:#AEB6D3}
+.gcol.g2 i.a.ref{background:#B89A55}
+h3{font-size:1.2rem}
+/* relatório */
+.rel h2{font-size:1.3rem;margin-top:22px}
+.rel-topo{border-bottom:2px solid var(--navy);padding-bottom:10px}
+.comp td:first-child{width:50%}
+.assinaturas{display:flex;gap:40px;margin-top:60px}
+.assinaturas div{flex:1;border-top:1px solid var(--ink);padding-top:6px;text-align:center;font-size:.9rem}
+@media print{
+  .no-print,.nav{display:none !important}
+  body{background:#fff;font-size:12px}
+  .wrap.wide{max-width:none;padding:0}
+  .num,.painel-box{border:1px solid #ccc}
+  .rel h2{break-after:avoid} table,.hb{break-inside:avoid}
+  .grid2{grid-template-columns:1fr 1fr}
+}
