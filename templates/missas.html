@@ -7,7 +7,7 @@
   {% if proxima %}
   <section class="relogio" aria-live="off">
     <h2>Próxima missa</h2>
-    <p class="quando"><b>{{ proxima.day|diabr }} às {{ proxima.time }}</b>{% if proxima.extra %}<span class="extra-tag">extra</span>{% endif %}{% if proxima.note %}<br>{{ proxima.note }}{% endif %}</p>
+    <p class="quando"><b>{{ proxima.day|diabr }} às {{ proxima.time }}</b>{% if proxima.extra %}<span class="extra-tag">extra</span>{% endif %}<br>{{ LUGAR[proxima.lugar] }}{% if proxima.note %} · {{ proxima.note }}{% endif %}</p>
     <div class="tempo" id="tempo" data-alvo="{{ proxima.iso }}" role="timer" aria-label="Contagem regressiva para a próxima missa">
       <div><b id="t-d">--</b><span>dias</span></div>
       <div><b id="t-h">--</b><span>horas</span></div>
@@ -24,7 +24,7 @@
   <h2>Todas as semanas</h2>
   <ul class="grade">
     {% for nome, horas in semana %}
-    <li><span class="dia-nome">{{ nome }}</span><span class="horas-txt">{% for h in horas %}{{ h.time }}{% if h.note %}<small>{{ h.note }}</small>{% elif not loop.last %} · {% endif %}{% endfor %}</span></li>
+    <li><span class="dia-nome">{{ nome }}</span><span class="horas-txt">{% for h in horas %}<span style="display:block">{{ h.time }}<small>{{ LUGAR[h.lugar] }}{% if h.note %} · {{ h.note }}{% endif %}</small></span>{% endfor %}</span></li>
     {% endfor %}
   </ul>
   {% endif %}
@@ -33,7 +33,7 @@
   <h2>Missas extras</h2>
   <ul class="grade">
     {% for e in extras %}
-    <li><span class="dia-nome">{{ e.day|diabr }}</span><span class="horas-txt">{{ e.time }}{% if e.note %}<small>{{ e.note }}</small>{% endif %}</span></li>
+    <li><span class="dia-nome">{{ e.day|diabr }}</span><span class="horas-txt">{{ e.time }}<small>{{ LUGAR[e.lugar] }}{% if e.note %} · {{ e.note }}{% endif %}</small></span></li>
     {% endfor %}
   </ul>
   {% endif %}

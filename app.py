@@ -20,6 +20,8 @@ import content
 
 TZ = ZoneInfo("America/Sao_Paulo")
 DIAS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+LUGARES = [("matriz", "Matriz"), ("santa_luzia", "Capela Santa Luzia")]
+LUGAR_LABEL = dict(LUGARES)
 MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 
 app = Flask(__name__)
@@ -86,6 +88,7 @@ class MassSlot(db.Model):  # missa que se repete toda semana
     weekday = db.Column(db.Integer, nullable=False)  # 0 = segunda
     time = db.Column(db.String(5), nullable=False)  # HH:MM
     note = db.Column(db.String(80))
+    lugar = db.Column(db.String(20), nullable=False, default="matriz", server_default="matriz")
     __table_args__ = (db.UniqueConstraint("weekday", "time", name="uq_mass_slot"),)
 
 
@@ -94,6 +97,7 @@ class ExtraMass(db.Model):  # missa fora da rotina, em uma data específica
     day = db.Column(db.Date, nullable=False)
     time = db.Column(db.String(5), nullable=False)
     note = db.Column(db.String(120))
+    lugar = db.Column(db.String(20), nullable=False, default="matriz", server_default="matriz")
     created_at = db.Column(db.DateTime, default=now_utc)
 
 
@@ -114,6 +118,7 @@ class FinanceEntry(db.Model):
     method = db.Column(db.String(20), nullable=False, default="nao_informado")
     note = db.Column(db.String(160))
     mass_label = db.Column(db.String(30))  # ex.: "Dom 08:00" (só nas coletas de missa)
+    lugar = db.Column(db.String(20), nullable=False, default="matriz", server_default="matriz")
     mass_key = db.Column(db.String(20))  # "AAAA-MM-DD|HH:MM", evita registrar a mesma missa duas vezes
     created_by = db.Column(db.String(60))
     created_at = db.Column(db.DateTime, default=now_utc)
@@ -138,6 +143,14 @@ class ConfessionBooking(db.Model):
 
 def init_db():
     db.create_all()
+    # Bancos criados antes da capela Santa Luzia ganham a coluna "lugar" (tudo que já existe vira "matriz").
+    from sqlalchemy import inspect, text
+    insp = inspect(db.engine)
+    for model in (MassSlot, ExtraMass, FinanceEntry):
+        nome = model.__tablename__
+        if "lugar" not in {c["name"] for c in insp.get_columns(nome)}:
+            db.session.execute(text(f"ALTER TABLE {nome} ADD COLUMN lugar VARCHAR(20) NOT NULL DEFAULT 'matriz'"))
+            db.session.commit()
     if User.query.count() == 0:
         pwd = os.environ.get("ADMIN_PASSWORD")
         if not pwd:
@@ -246,6 +259,8 @@ def csrf_token():
 
 app.jinja_env.globals["csrf_token"] = csrf_token
 app.jinja_env.globals["DIAS"] = DIAS
+app.jinja_env.globals["LUGARES"] = LUGARES
+app.jinja_env.globals["LUGAR"] = LUGAR_LABEL
 
 
 @app.before_request
@@ -382,14 +397,14 @@ def next_mass():
         d = now.date() + timedelta(days=i)
         for sl in slots:
             if sl.weekday == d.weekday():
-                cands.append((mass_dt(d, sl.time), d, sl.time, sl.note, False))
+                cands.append((mass_dt(d, sl.time), d, sl.time, sl.note, False, sl.lugar))
     for e in ExtraMass.query.filter(ExtraMass.day >= now.date()).all():
-        cands.append((mass_dt(e.day, e.time), e.day, e.time, e.note, True))
+        cands.append((mass_dt(e.day, e.time), e.day, e.time, e.note, True, e.lugar))
     cands = [c for c in cands if c[0] > now]
     if not cands:
         return None
-    dt, d, t, note, extra = min(cands, key=lambda c: c[0])
-    return {"dt": dt, "iso": dt.isoformat(), "day": d, "time": t, "note": note, "extra": extra}
+    dt, d, t, note, extra, lugar = min(cands, key=lambda c: c[0])
+    return {"dt": dt, "iso": dt.isoformat(), "day": d, "time": t, "note": note, "extra": extra, "lugar": lugar}
 
 
 @app.route("/missas")
@@ -579,6 +594,8 @@ def missas_admin(area, user):
     if request.method == "POST":
         acao = request.form.get("acao")
         note = clean(request.form.get("note"), 120)
+        lugar = request.form.get("lugar")
+        lugar = lugar if lugar in LUGAR_LABEL else "matriz"
         if acao in ("semanal", "extra"):
             try:
                 hh, mm = request.form.get("time", "").split(":")
@@ -587,14 +604,14 @@ def missas_admin(area, user):
                 if acao == "semanal":
                     wd = int(request.form.get("weekday"))
                     assert 0 <= wd <= 6
-                    db.session.add(MassSlot(weekday=wd, time=t, note=note[:80] or None))
+                    db.session.add(MassSlot(weekday=wd, time=t, note=note[:80] or None, lugar=lugar))
                     flash("Missa semanal adicionada.", "ok")
                 else:
                     day = date.fromisoformat(request.form.get("day", ""))
                     if day < hoje:
                         flash("Escolha uma data de hoje em diante.", "erro")
                         return redirect(url_for("missas_admin", area=area))
-                    db.session.add(ExtraMass(day=day, time=t, note=note or None))
+                    db.session.add(ExtraMass(day=day, time=t, note=note or None, lugar=lugar))
                     flash("Missa extra adicionada.", "ok")
                 db.session.commit()
             except IntegrityError:
@@ -723,9 +740,9 @@ def pending_masses(days=21):
         d = now.date() - timedelta(days=i)
         for sl in slots:
             if sl.weekday == d.weekday():
-                cands.append((d, sl.time, sl.note))
+                cands.append((d, sl.time, sl.note, sl.lugar))
     for e in ExtraMass.query.filter(ExtraMass.day >= start, ExtraMass.day <= now.date()).all():
-        cands.append((e.day, e.time, e.note))
+        cands.append((e.day, e.time, e.note, e.lugar))
     done = {k for (k,) in db.session.query(FinanceEntry.mass_key).filter(FinanceEntry.mass_key.isnot(None),
                                                                          FinanceEntry.day >= start).all()}
     out = [c for c in cands if mass_dt(c[0], c[1]) <= now and f"{c[0].isoformat()}|{c[1]}" not in done]
@@ -738,12 +755,12 @@ def mass_label(d, t):
 
 def finance_rows(start, end):
     """Lançamentos do padre + doações confirmadas pelo site (Pix), como (dia, categoria, valor, forma, missa)."""
-    rows = [(e.day, e.category, e.amount, e.method, e.mass_label)
+    rows = [(e.day, e.category, e.amount, e.method, e.mass_label, e.lugar)
             for e in FinanceEntry.query.filter(FinanceEntry.day >= start, FinanceEntry.day <= end).all()]
     for d in Donation.query.filter_by(status="confirmado").all():
         ld = d.created_at.replace(tzinfo=timezone.utc).astimezone(TZ).date()
         if start <= ld <= end:
-            rows.append((ld, "doacao", d.amount, "pix", None))
+            rows.append((ld, "doacao", d.amount, "pix", None, "matriz"))  # doações do site contam na matriz
     return rows
 
 
@@ -766,7 +783,13 @@ def financeiro(area, user):
         ano = min(max(int(request.args.get("ano", hoje.year)), 2000), hoje.year + 1)
     except ValueError:
         ano = hoje.year
+    local = request.args.get("local", "")
     rows = finance_rows(date(ano - 1, 1, 1), date(ano, 12, 31))
+    por_local_tot = {k: sum((r[2] for r in rows if r[0].year == ano and r[5] == k), Decimal("0")) for k, _ in LUGARES}
+    if local in LUGAR_LABEL:
+        rows = [r for r in rows if r[5] == local]
+    else:
+        local = ""
     yr = [r for r in rows if r[0].year == ano]
     total = sum((r[2] for r in yr), Decimal("0"))
     own = [r for r in yr if r[1] != "repasse"]
@@ -818,19 +841,25 @@ def financeiro(area, user):
     # coletas das missas
     coletas = [r for r in yr if r[1] == "coleta" and r[2] > 0]
     media_coleta = (sum((r[2] for r in coletas), Decimal("0")) / len(coletas)) if coletas else Decimal("0")
-    ult = (FinanceEntry.query.filter(FinanceEntry.category == "coleta", FinanceEntry.amount > 0,
-                                     FinanceEntry.day <= date(ano, 12, 31))
+    q_ult = FinanceEntry.query.filter(FinanceEntry.category == "coleta", FinanceEntry.amount > 0,
+                                      FinanceEntry.day <= date(ano, 12, 31))
+    if local:
+        q_ult = q_ult.filter(FinanceEntry.lugar == local)
+    ult = (q_ult
            .order_by(FinanceEntry.day.desc(), FinanceEntry.id.desc()).limit(12).all())[::-1]
     g_coletas = chart([((f"{e.day.strftime('%d/%m')} {e.mass_label.split()[-1]}" if e.mass_label else e.day.strftime('%d/%m')),
                         e.amount, i == len(ult) - 1) for i, e in enumerate(ult)], media_coleta or None) if ult else None
     por_missa = {}
     for r in coletas:
-        k = r[4] or "Sem missa indicada"
+        k = (r[4] or "Sem missa indicada") + (f" · {LUGAR_LABEL[r[5]]}" if not local else "")
         n, t = por_missa.get(k, (0, Decimal("0")))
         por_missa[k] = (n + 1, t + r[2])
     tabela = sorted(((k, n, t, t / n) for k, (n, t) in por_missa.items()), key=lambda x: x[2], reverse=True)
 
-    return render_template("financeiro.html", area=area, user=user, ano=ano, anos=range(hoje.year, 2023, -1),
+    topo_l = max(list(por_local_tot.values()) + [Decimal("1")])
+    locais = [{"nome": LUGAR_LABEL[k], "v": v, "p": float(v / sum(por_local_tot.values()) * 100) if sum(por_local_tot.values()) else 0,
+               "w": int(v / topo_l * 100)} for k, v in por_local_tot.items() if v > 0]
+    return render_template("financeiro.html", area=area, user=user, ano=ano, local=local, locais=locais, anos=range(hoje.year, 2023, -1),
                            total=total, total_own=total_own, media_coleta=media_coleta, n_coletas=len(coletas),
                            dizimo_ano=sum(do_ano.values(), Decimal("0")), g_dizimo=g_dizimo, g_mensal=g_mensal,
                            cats=cats, metodos=metodos, g_coletas=g_coletas, tabela=tabela, hoje=hoje)
@@ -845,7 +874,7 @@ def lancamentos(area, user):
         metodo = request.form.get("method")
         metodo = metodo if metodo in METHOD_LABEL else "nao_informado"
         if acao in ("coleta", "dispensar"):
-            pend = {f"{d.isoformat()}|{t}": (d, t, n) for d, t, n in pending_masses()}
+            pend = {f"{d.isoformat()}|{t}": (d, t, n, lg) for d, t, n, lg in pending_masses()}
             chave = request.form.get("mass_key", "")
             valor = Decimal("0.00") if acao == "dispensar" else parse_money(request.form.get("amount"), "0.01", "1000000")
             if chave not in pend:
@@ -853,8 +882,8 @@ def lancamentos(area, user):
             elif valor is None:
                 flash("Informe um valor válido para a coleta.", "erro")
             else:
-                d, t, n = pend[chave]
-                db.session.add(FinanceEntry(day=d, category="coleta", amount=valor, method=metodo, note=n,
+                d, t, n, lg = pend[chave]
+                db.session.add(FinanceEntry(day=d, category="coleta", amount=valor, method=metodo, note=n, lugar=lg,
                                             mass_label=mass_label(d, t), mass_key=chave, created_by=user.username))
                 db.session.commit()
                 flash("Coleta registrada." if valor > 0 else "Missa marcada como sem coleta.", "ok")
@@ -866,16 +895,18 @@ def lancamentos(area, user):
             cat = request.form.get("category")
             valor = parse_money(request.form.get("amount"), "0.01", "1000000")
             nota = clean(request.form.get("note"), 160) or None
+            lg = request.form.get("lugar")
+            lg = lg if lg in LUGAR_LABEL else "matriz"
             if not dia or dia > hoje or cat not in CAT_LABEL or valor is None:
                 flash("Confira a data (não pode ser futura), a categoria e o valor.", "erro")
             elif acao == "novo":
-                db.session.add(FinanceEntry(day=dia, category=cat, amount=valor, method=metodo, note=nota, created_by=user.username))
+                db.session.add(FinanceEntry(day=dia, category=cat, amount=valor, method=metodo, note=nota, lugar=lg, created_by=user.username))
                 db.session.commit()
                 flash("Lançamento registrado.", "ok")
             else:
                 e = db.session.get(FinanceEntry, int(request.form.get("id") or 0))
                 if e:
-                    e.day, e.category, e.amount, e.method, e.note = dia, cat, valor, metodo, nota
+                    e.day, e.category, e.amount, e.method, e.note, e.lugar = dia, cat, valor, metodo, nota, lg
                     db.session.commit()
                     flash("Lançamento atualizado.", "ok")
         elif acao == "apagar":
@@ -886,13 +917,18 @@ def lancamentos(area, user):
                 flash("Lançamento apagado.", "ok")
         return redirect(url_for("lancamentos"))
     filtro = request.args.get("cat", "")
+    flocal = request.args.get("local", "")
     q = FinanceEntry.query
     if filtro in CAT_LABEL:
         q = q.filter_by(category=filtro)
+    if flocal in LUGAR_LABEL:
+        q = q.filter_by(lugar=flocal)
+    else:
+        flocal = ""
     items = q.order_by(FinanceEntry.day.desc(), FinanceEntry.id.desc()).limit(150).all()
     return render_template("lancamentos.html", area=area, user=user, hoje=hoje, cats=CATS, methods=METHODS,
-                           pendentes=[(d, t, n, f"{d.isoformat()}|{t}") for d, t, n in pending_masses()],
-                           items=items, filtro=filtro, CAT_LABEL=CAT_LABEL, METHOD_LABEL=METHOD_LABEL)
+                           pendentes=[(d, t, n, f"{d.isoformat()}|{t}", lg) for d, t, n, lg in pending_masses()],
+                           items=items, filtro=filtro, flocal=flocal, CAT_LABEL=CAT_LABEL, METHOD_LABEL=METHOD_LABEL)
 
 
 @app.route("/padre/senha", methods=["POST"])

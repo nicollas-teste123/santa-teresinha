@@ -9,9 +9,9 @@
       <div class="painel-box" style="margin-bottom:20px">
         <h2>Coleta das missas</h2>
         <p class="dica">Missas já realizadas nos últimos 21 dias, aguardando o registro da coleta.</p>
-        {% for d, t, n, chave in pendentes %}
+        {% for d, t, n, chave, lg in pendentes %}
         <div class="pend">
-          <b>{{ d|diabr }} · {{ t }}</b>{% if n %} <small class="dica">{{ n }}</small>{% endif %}
+          <b>{{ d|diabr }} · {{ t }}</b> <small class="dica">{{ LUGAR[lg] }}{% if n %} · {{ n }}{% endif %}</small>
           <form method="post">
             <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="mass_key" value="{{ chave }}">
             <div><label for="v{{ loop.index }}">Coleta (R$)</label><input type="text" id="v{{ loop.index }}" name="amount" inputmode="decimal" placeholder="0,00"></div>
@@ -30,6 +30,7 @@
         <form method="post">
           <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="acao" value="novo">
           <div class="campo"><label for="nd">Data</label><input type="date" id="nd" name="day" value="{{ hoje.isoformat() }}" max="{{ hoje.isoformat() }}" required style="width:100%;font:inherit;padding:12px 13px;border:1.5px solid #B9BED0;border-radius:9px"></div>
+          <div class="campo"><label for="nl">Local</label><select id="nl" name="lugar">{% for k, nome in LUGARES %}<option value="{{ k }}">{{ nome }}</option>{% endfor %}</select></div>
           <div class="campo"><label for="nc">Categoria</label><select id="nc" name="category">{% for k, nome, obs in cats %}<option value="{{ k }}">{{ nome }}{% if obs %} ({{ obs }}){% endif %}</option>{% endfor %}</select></div>
           <div class="campo"><label for="na">Valor (R$)</label><input type="text" id="na" name="amount" inputmode="decimal" placeholder="0,00" required></div>
           <div class="campo"><label for="nm">Como foi recebido</label><select id="nm" name="method">{% for k, nome in methods %}<option value="{{ k }}" {{ 'selected' if k == 'dinheiro' }}>{{ nome }}</option>{% endfor %}</select></div>
@@ -41,17 +42,22 @@
 
     <section>
       <div class="linha" style="margin-bottom:12px">
-        <a class="btn peq {{ '' if not filtro else 'sec' }}" href="{{ url_for('lancamentos') }}">Todos</a>
-        {% for k, nome, obs in cats %}<a class="btn peq {{ '' if filtro == k else 'sec' }}" href="{{ url_for('lancamentos', cat=k) }}">{{ nome }}</a>{% endfor %}
+        <a class="btn peq {{ '' if not flocal else 'sec' }}" href="{{ url_for('lancamentos', cat=filtro or None) }}">Todos os locais</a>
+        {% for k, nome in LUGARES %}<a class="btn peq {{ '' if flocal == k else 'sec' }}" href="{{ url_for('lancamentos', cat=filtro or None, local=k) }}">{{ nome }}</a>{% endfor %}
+      </div>
+      <div class="linha" style="margin-bottom:12px">
+        <a class="btn peq {{ '' if not filtro else 'sec' }}" href="{{ url_for('lancamentos', local=flocal or None) }}">Todas as categorias</a>
+        {% for k, nome, obs in cats %}<a class="btn peq {{ '' if filtro == k else 'sec' }}" href="{{ url_for('lancamentos', cat=k, local=flocal or None) }}">{{ nome }}</a>{% endfor %}
       </div>
       {% for e in items %}
       <div class="aviso-item">
         <details>
-          <summary style="cursor:pointer"><b>{{ e.amount|brl }}</b> · {{ CAT_LABEL[e.category] }}{% if e.mass_label %} · {{ e.mass_label }}{% endif %}
+          <summary style="cursor:pointer"><b>{{ e.amount|brl }}</b> · {{ CAT_LABEL[e.category] }}{% if e.mass_label %} · {{ e.mass_label }}{% endif %} · {{ LUGAR[e.lugar] }}
             <small>· {{ e.day.strftime('%d/%m/%Y') }} · {{ METHOD_LABEL[e.method] }}{% if e.amount == 0 %} · sem coleta{% endif %}</small></summary>
           <form method="post" style="margin-top:12px">
             <input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="id" value="{{ e.id }}">
             <div class="campo"><label for="ed{{ e.id }}">Data</label><input type="date" id="ed{{ e.id }}" name="day" value="{{ e.day.isoformat() }}" max="{{ hoje.isoformat() }}" required style="width:100%;font:inherit;padding:12px 13px;border:1.5px solid #B9BED0;border-radius:9px"></div>
+            <div class="campo"><label for="el{{ e.id }}">Local</label><select id="el{{ e.id }}" name="lugar">{% for k, nome in LUGARES %}<option value="{{ k }}" {{ 'selected' if k == e.lugar }}>{{ nome }}</option>{% endfor %}</select></div>
             <div class="campo"><label for="ec{{ e.id }}">Categoria</label><select id="ec{{ e.id }}" name="category">{% for k, nome, obs in cats %}<option value="{{ k }}" {{ 'selected' if k == e.category }}>{{ nome }}</option>{% endfor %}</select></div>
             <div class="campo"><label for="ea{{ e.id }}">Valor (R$)</label><input type="text" id="ea{{ e.id }}" name="amount" inputmode="decimal" value="{{ ('%.2f' % e.amount)|replace('.', ',') if e.amount > 0 else '' }}" required></div>
             <div class="campo"><label for="em{{ e.id }}">Como foi recebido</label><select id="em{{ e.id }}" name="method">{% for k, nome in methods %}<option value="{{ k }}" {{ 'selected' if k == e.method }}>{{ nome }}</option>{% endfor %}</select></div>

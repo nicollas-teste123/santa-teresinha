@@ -13,12 +13,13 @@
           <div style="flex:1;min-width:130px"><label for="wd">Dia</label><select id="wd" name="weekday" required>{% for n in DIAS %}<option value="{{ loop.index0 }}">{{ n }}</option>{% endfor %}</select></div>
           <div style="width:120px"><label for="tm">Hora</label><input type="time" id="tm" name="time" required></div>
         </div>
-        <div class="campo" style="margin-top:12px"><label for="nt">Observação (opcional)</label><input type="text" id="nt" name="note" maxlength="80" placeholder="Ex.: Missa da comunidade"></div>
+        <div class="campo" style="margin-top:12px"><label for="lg1">Local</label><select id="lg1" name="lugar">{% for k, nome in LUGARES %}<option value="{{ k }}">{{ nome }}</option>{% endfor %}</select></div>
+        <div class="campo"><label for="nt">Observação (opcional)</label><input type="text" id="nt" name="note" maxlength="80" placeholder="Ex.: Missa da comunidade"></div>
         <button class="btn" type="submit">Adicionar missa semanal</button>
       </form>
       {% if slots %}
       <table>
-        {% for sl in slots %}<tr><td>{{ DIAS[sl.weekday] }}</td><td>{{ sl.time }}</td><td>{{ sl.note or '' }}</td>
+        {% for sl in slots %}<tr><td>{{ DIAS[sl.weekday] }}</td><td>{{ sl.time }}</td><td>{{ LUGAR[sl.lugar] }}{% if sl.note %} · {{ sl.note }}{% endif %}</td>
           <td style="text-align:right"><form method="post" class="inline"><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="id" value="{{ sl.id }}"><input type="hidden" name="acao" value="apagar_semanal">
           <button class="btn perigo peq" type="submit" onclick="return confirm('Remover esta missa da programação semanal?')">Remover</button></form></td></tr>{% endfor %}
       </table>
@@ -32,12 +33,13 @@
           <div style="flex:1;min-width:150px"><label for="dy">Data</label><input type="date" id="dy" name="day" min="{{ hoje.isoformat() }}" required style="width:100%;font:inherit;padding:12px 13px;border:1.5px solid #B9BED0;border-radius:9px"></div>
           <div style="width:120px"><label for="tx">Hora</label><input type="time" id="tx" name="time" required></div>
         </div>
-        <div class="campo" style="margin-top:12px"><label for="ne">Observação (opcional)</label><input type="text" id="ne" name="note" maxlength="120" placeholder="Ex.: Missa de Natal, Missa de 7º dia"></div>
+        <div class="campo" style="margin-top:12px"><label for="lg2">Local</label><select id="lg2" name="lugar">{% for k, nome in LUGARES %}<option value="{{ k }}">{{ nome }}</option>{% endfor %}</select></div>
+        <div class="campo"><label for="ne">Observação (opcional)</label><input type="text" id="ne" name="note" maxlength="120" placeholder="Ex.: Missa de Natal, Missa de 7º dia"></div>
         <button class="btn" type="submit">Adicionar missa extra</button>
       </form>
       {% if extras %}
       <table>
-        {% for e in extras %}<tr><td>{{ e.day|diabr }}</td><td>{{ e.time }}</td><td>{{ e.note or '' }}</td>
+        {% for e in extras %}<tr><td>{{ e.day|diabr }}</td><td>{{ e.time }}</td><td>{{ LUGAR[e.lugar] }}{% if e.note %} · {{ e.note }}{% endif %}</td>
           <td style="text-align:right"><form method="post" class="inline"><input type="hidden" name="_csrf" value="{{ csrf_token() }}"><input type="hidden" name="id" value="{{ e.id }}"><input type="hidden" name="acao" value="apagar_extra">
           <button class="btn perigo peq" type="submit" onclick="return confirm('Remover esta missa extra?')">Remover</button></form></td></tr>{% endfor %}
       </table>

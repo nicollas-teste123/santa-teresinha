@@ -5,8 +5,9 @@
 {% set aba = 'financeiro' %}{% include "_nav.html" %}
 <main class="wrap wide page">
   <div class="filtros">
-    <h1 style="margin:0;flex:1">Controle financeiro</h1>
+    <h1 style="margin:0;flex:1">Controle financeiro{% if local %} · {{ LUGAR[local] }}{% endif %}</h1>
     <form method="get" class="linha">
+      <div><label for="local">Local</label><select id="local" name="local" onchange="this.form.submit()"><option value="">Todos</option>{% for k, nome in LUGARES %}<option value="{{ k }}" {{ 'selected' if k == local }}>{{ nome }}</option>{% endfor %}</select></div>
       <div><label for="ano">Ano</label><select id="ano" name="ano" onchange="this.form.submit()">{% for a in anos %}<option value="{{ a }}" {{ 'selected' if a == ano }}>{{ a }}</option>{% endfor %}</select></div>
       <a class="btn" href="{{ url_for('lancamentos') }}">Registrar entradas</a>
     </form>
@@ -35,6 +36,13 @@
       <p class="dica">Receita própria, sem coletas de repasse.</p>
       {{ barras(g_mensal, 'ambar') }}
     </section>
+    {% if not local and locais|length > 1 %}
+    <section class="painel-box">
+      <h2>Entradas por local</h2>
+      <p class="dica">Matriz e capela, no ano. As doações do site contam na matriz.</p>
+      {% for l in locais %}{{ hbarra(l.nome, '', l.v, l.p, l.w) }}{% endfor %}
+    </section>
+    {% endif %}
     <section class="painel-box">
       <h2>De onde vêm as entradas</h2>
       {% for c in cats %}{{ hbarra(c.nome, c.obs, c.v, c.p, c.w) }}{% else %}<p class="dica">Sem dados no período.</p>{% endfor %}
@@ -62,6 +70,6 @@
       {% else %}<p class="dica">Sem coletas registradas neste ano.</p>{% endif %}
     </section>
   </div>
-  <p class="dica" style="margin-top:16px">As doações confirmadas pelo site (Pix) entram sozinhas em "Doações e donativos", então não precisa lançá-las de novo. "Receita própria" não inclui as coletas de repasse.</p>
+  <p class="dica" style="margin-top:16px">Use o filtro "Local" para ver só a matriz ou só a Capela Santa Luzia. As doações confirmadas pelo site (Pix) entram sozinhas em "Doações e donativos", então não precisa lançá-las de novo. "Receita própria" não inclui as coletas de repasse.</p>
 </main>
 {% endblock %}
