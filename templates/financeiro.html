@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "_graficos.html" import barras, hbarra %}
+{% block title %}Financeiro{% endblock %}
+{% block body %}
+{% set aba = 'financeiro' %}{% include "_nav.html" %}
+<main class="wrap wide page">
+  <div class="filtros">
+    <h1 style="margin:0;flex:1">Controle financeiro</h1>
+    <form method="get" class="linha">
+      <div><label for="ano">Ano</label><select id="ano" name="ano" onchange="this.form.submit()">{% for a in anos %}<option value="{{ a }}" {{ 'selected' if a == ano }}>{{ a }}</option>{% endfor %}</select></div>
+      <a class="btn" href="{{ url_for('lancamentos') }}">Registrar entradas</a>
+    </form>
+  </div>
+
+  <div class="cards">
+    <div class="num"><small>Entradas em {{ ano }}</small><b>{{ total|brl }}</b></div>
+    <div class="num"><small>Receita própria</small><b>{{ total_own|brl }}</b></div>
+    <div class="num"><small>Dízimos em {{ ano }}</small><b>{{ dizimo_ano|brl }}</b></div>
+    <div class="num"><small>Média por coleta de missa</small><b>{{ media_coleta|brl }}</b></div>
+  </div>
+
+  {% if not total %}
+  <div class="painel-box" style="margin-bottom:20px"><p style="margin:0">Ainda não há entradas em {{ ano }}. Comece em <a href="{{ url_for('lancamentos') }}">Lançamentos</a>: registre a coleta das missas já realizadas e os demais valores.</p></div>
+  {% endif %}
+
+  <div class="grid2">
+    <section class="painel-box">
+      <h2>Dízimo por fim de semana</h2>
+      <p class="dica">Sábado e domingo de cada semana. A linha tracejada é a média de {{ ano }}.</p>
+      <div class="legenda"><span><b style="background:var(--navy)"></b>Dízimo</span><span><b style="background:#B89A55"></b>Último</span><span>- - Média de {{ ano }}</span></div>
+      {{ barras(g_dizimo) }}
+    </section>
+    <section class="painel-box">
+      <h2>Entradas por mês</h2>
+      <p class="dica">Receita própria, sem coletas de repasse.</p>
+      {{ barras(g_mensal, 'ambar') }}
+    </section>
+    <section class="painel-box">
+      <h2>De onde vêm as entradas</h2>
+      {% for c in cats %}{{ hbarra(c.nome, c.obs, c.v, c.p, c.w) }}{% else %}<p class="dica">Sem dados no período.</p>{% endfor %}
+    </section>
+    <section class="painel-box">
+      <h2>Como foram recebidas</h2>
+      <p class="dica">Dinheiro precisa ser entregue e depositado; Pix cai direto na conta.</p>
+      {% for m in metodos %}{{ hbarra(m.nome, '', m.v, m.p, m.w) }}{% else %}<p class="dica">Sem dados no período.</p>{% endfor %}
+    </section>
+    <section class="painel-box">
+      <h2>Coleta das últimas missas</h2>
+      {% if g_coletas %}
+      <p class="dica">Linha tracejada: média de {{ ano }}.</p>
+      {{ barras(g_coletas) }}
+      {% else %}<p class="dica">Registre a coleta das missas em Lançamentos para ver este gráfico.</p>{% endif %}
+    </section>
+    <section class="painel-box">
+      <h2>Coleta por horário de missa</h2>
+      {% if tabela %}
+      <div class="scroll"><table>
+        <tr><th>Missa</th><th>Qtd.</th><th>Total</th><th>Média</th></tr>
+        {% for nome, n, t, m in tabela %}<tr><td>{{ nome }}</td><td>{{ n }}</td><td>{{ t|brl }}</td><td>{{ m|brl }}</td></tr>{% endfor %}
+      </table></div>
+      <p class="dica" style="margin-top:8px">{{ n_coletas }} coletas registradas em {{ ano }}.</p>
+      {% else %}<p class="dica">Sem coletas registradas neste ano.</p>{% endif %}
+    </section>
+  </div>
+  <p class="dica" style="margin-top:16px">As doações confirmadas pelo site (Pix) entram sozinhas em "Doações e donativos", então não precisa lançá-las de novo. "Receita própria" não inclui as coletas de repasse.</p>
+</main>
+{% endblock %}

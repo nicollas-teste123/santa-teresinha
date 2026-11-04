@@ -1,0 +1,16 @@
+{% macro barras(g, classe='') -%}
+<div class="grafico {{ classe }}">
+  <div class="gmax">{{ g.max|brlk }}</div>
+  <div class="gbarras">
+    {% if g.avg_pct %}<div class="gmedia" style="bottom:{{ g.avg_pct }}%"></div>{% endif %}
+    {% for it in g['items'] %}<div class="gcol"><i class="{{ 'ult' if it.last }}" style="height:{{ it.pct }}%" title="{{ it.label }}: {{ it.value|brl }}"></i></div>{% endfor %}
+  </div>
+  <div class="grot">{% for it in g['items'] %}<span>{{ it.label }}</span>{% endfor %}</div>
+</div>
+{%- endmacro %}
+{% macro hbarra(nome, obs, v, p, w) -%}
+<div class="hb">
+  <div class="l"><span>{{ nome }}{% if obs %} <small>({{ obs }})</small>{% endif %}</span><span>{{ v|brl }} <small>· {{ p|pc }}</small></span></div>
+  <div class="t"><i style="width:{{ w }}%"></i></div>
+</div>
+{%- endmacro %}

@@ -97,6 +97,28 @@ class ExtraMass(db.Model):  # missa fora da rotina, em uma data específica
     created_at = db.Column(db.DateTime, default=now_utc)
 
 
+CATS = [("dizimo", "Dízimos", ""), ("coleta", "Coletas das missas", ""),
+        ("festa", "Festas e eventos", "não recorrente"), ("doacao", "Doações e donativos", ""),
+        ("repasse", "Coletas de repasse", "fora da receita própria"), ("outros", "Outras entradas", "")]
+CAT_LABEL = {k: v for k, v, _ in CATS}
+METHODS = [("dinheiro", "Dinheiro"), ("pix", "Pix"), ("cartao", "Cartão"),
+           ("transferencia", "Transferência"), ("nao_informado", "Não informado")]
+METHOD_LABEL = dict(METHODS)
+
+
+class FinanceEntry(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    day = db.Column(db.Date, nullable=False)
+    category = db.Column(db.String(20), nullable=False)
+    amount = db.Column(db.Numeric(12, 2), nullable=False)
+    method = db.Column(db.String(20), nullable=False, default="nao_informado")
+    note = db.Column(db.String(160))
+    mass_label = db.Column(db.String(30))  # ex.: "Dom 08:00" (só nas coletas de missa)
+    mass_key = db.Column(db.String(20))  # "AAAA-MM-DD|HH:MM", evita registrar a mesma missa duas vezes
+    created_by = db.Column(db.String(60))
+    created_at = db.Column(db.DateTime, default=now_utc)
+
+
 class ConfessionSlot(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     weekday = db.Column(db.Integer, nullable=False)  # 0 = segunda
@@ -134,6 +156,17 @@ with app.app_context():
 def brl(v):
     s = f"{Decimal(v):,.2f}"
     return "R$ " + s.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+@app.template_filter("brlk")
+def brlk(v):
+    v = Decimal(v)
+    return f"R$ {v / 1000:.1f} mil".replace(".", ",") if v >= 1000 else f"R$ {int(v)}"
+
+
+@app.template_filter("pc")
+def pc(x):
+    return f"{x:.1f}".replace(".", ",") + "%"
 
 
 @app.template_filter("local")
@@ -190,7 +223,7 @@ def qr_svg(payload):
     return out.getvalue().decode("utf-8")
 
 
-def parse_money(raw):
+def parse_money(raw, lo="1", hi="50000"):
     raw = re.sub(r"[^\d,.]", "", raw or "")
     if "," in raw:
         raw = raw.replace(".", "").replace(",", ".")
@@ -198,7 +231,7 @@ def parse_money(raw):
         v = Decimal(raw).quantize(Decimal("0.01"))
     except (InvalidOperation, ValueError):
         return None
-    return v if Decimal("1") <= v <= Decimal("50000") else None
+    return v if Decimal(lo) <= v <= Decimal(hi) else None
 
 
 def clean(text, limit):
@@ -678,6 +711,188 @@ def padre_reflexoes(area, user):
         return redirect(url_for("padre_reflexoes"))
     items = Reflection.query.order_by(Reflection.day.desc()).limit(60).all()
     return render_template("padre_reflexoes.html", area=area, user=user, items=items, hoje=hoje)
+
+
+def pending_masses(days=21):
+    """Missas já realizadas (últimos `days` dias) cuja coleta ainda não foi registrada."""
+    now = datetime.now(TZ)
+    start = now.date() - timedelta(days=days)
+    cands = []
+    slots = MassSlot.query.all()
+    for i in range(days + 1):
+        d = now.date() - timedelta(days=i)
+        for sl in slots:
+            if sl.weekday == d.weekday():
+                cands.append((d, sl.time, sl.note))
+    for e in ExtraMass.query.filter(ExtraMass.day >= start, ExtraMass.day <= now.date()).all():
+        cands.append((e.day, e.time, e.note))
+    done = {k for (k,) in db.session.query(FinanceEntry.mass_key).filter(FinanceEntry.mass_key.isnot(None),
+                                                                         FinanceEntry.day >= start).all()}
+    out = [c for c in cands if mass_dt(c[0], c[1]) <= now and f"{c[0].isoformat()}|{c[1]}" not in done]
+    return sorted(out, key=lambda c: mass_dt(c[0], c[1]), reverse=True)
+
+
+def mass_label(d, t):
+    return f"{DIAS[d.weekday()][:3]} {t}"
+
+
+def finance_rows(start, end):
+    """Lançamentos do padre + doações confirmadas pelo site (Pix), como (dia, categoria, valor, forma, missa)."""
+    rows = [(e.day, e.category, e.amount, e.method, e.mass_label)
+            for e in FinanceEntry.query.filter(FinanceEntry.day >= start, FinanceEntry.day <= end).all()]
+    for d in Donation.query.filter_by(status="confirmado").all():
+        ld = d.created_at.replace(tzinfo=timezone.utc).astimezone(TZ).date()
+        if start <= ld <= end:
+            rows.append((ld, "doacao", d.amount, "pix", None))
+    return rows
+
+
+def chart(items, avg=None):
+    """items: [(rótulo, valor, é_o_último)] -> estrutura pronta para o gráfico de barras."""
+    top = max([v for _, v, _ in items] + ([avg] if avg else []) + [Decimal("1")])
+    return {"items": [{"label": l, "value": v, "pct": int(v / top * 100), "last": last} for l, v, last in items],
+            "avg": avg, "avg_pct": int(avg / top * 100) if avg else None, "max": top}
+
+
+def saturday_of(d):
+    return d - timedelta(days=(d.weekday() - 5) % 7)
+
+
+@app.route("/padre/financeiro")
+@padre_only
+def financeiro(area, user):
+    hoje = datetime.now(TZ).date()
+    try:
+        ano = min(max(int(request.args.get("ano", hoje.year)), 2000), hoje.year + 1)
+    except ValueError:
+        ano = hoje.year
+    rows = finance_rows(date(ano - 1, 1, 1), date(ano, 12, 31))
+    yr = [r for r in rows if r[0].year == ano]
+    total = sum((r[2] for r in yr), Decimal("0"))
+    own = [r for r in yr if r[1] != "repasse"]
+    total_own = sum((r[2] for r in own), Decimal("0"))
+
+    # dízimo por fim de semana (sábado + domingo), 14 fins de semana
+    fim = hoje if ano == hoje.year else date(ano, 12, 31)
+    ultimo = saturday_of(fim)
+    dz = {}
+    for r in rows:
+        if r[1] == "dizimo":
+            w = saturday_of(r[0])
+            dz[w] = dz.get(w, Decimal("0")) + r[2]
+    sabados = [ultimo - timedelta(weeks=i) for i in range(13, -1, -1)]
+    do_ano = {w: v for w, v in dz.items() if w.year == ano}
+    media_dz = None
+    if do_ano:
+        n = (ultimo - min(do_ano)).days // 7 + 1
+        media_dz = sum(do_ano.values()) / max(n, 1)
+    g_dizimo = chart([(w.strftime("%d/%m"), dz.get(w, Decimal("0")), w == ultimo) for w in sabados], media_dz)
+
+    # entradas por mês (receita própria)
+    ate = hoje.month if ano == hoje.year else 12
+    mensal = []
+    for m in range(1, ate + 1):
+        mensal.append((f"{MESES[m-1]}/{str(ano)[2:]}", sum((r[2] for r in own if r[0].month == m), Decimal("0")), m == ate))
+    g_mensal = chart(mensal)
+
+    # origem e forma de recebimento
+    cats = []
+    for k, nome, obs in CATS:
+        v = sum((r[2] for r in yr if r[1] == k), Decimal("0"))
+        if v > 0:
+            cats.append({"nome": nome, "obs": obs, "v": v, "p": float(v / total * 100) if total else 0})
+    topo = max([c["v"] for c in cats] + [Decimal("1")])
+    for c in cats:
+        c["w"] = int(c["v"] / topo * 100)
+    cats.sort(key=lambda c: c["v"], reverse=True)
+    metodos = []
+    for k, nome in METHODS:
+        v = sum((r[2] for r in own if r[3] == k), Decimal("0"))
+        if v > 0:
+            metodos.append({"nome": nome, "v": v, "p": float(v / total_own * 100) if total_own else 0})
+    topo_m = max([m["v"] for m in metodos] + [Decimal("1")])
+    for m in metodos:
+        m["w"] = int(m["v"] / topo_m * 100)
+    metodos.sort(key=lambda m: m["v"], reverse=True)
+
+    # coletas das missas
+    coletas = [r for r in yr if r[1] == "coleta" and r[2] > 0]
+    media_coleta = (sum((r[2] for r in coletas), Decimal("0")) / len(coletas)) if coletas else Decimal("0")
+    ult = (FinanceEntry.query.filter(FinanceEntry.category == "coleta", FinanceEntry.amount > 0,
+                                     FinanceEntry.day <= date(ano, 12, 31))
+           .order_by(FinanceEntry.day.desc(), FinanceEntry.id.desc()).limit(12).all())[::-1]
+    g_coletas = chart([((f"{e.day.strftime('%d/%m')} {e.mass_label.split()[-1]}" if e.mass_label else e.day.strftime('%d/%m')),
+                        e.amount, i == len(ult) - 1) for i, e in enumerate(ult)], media_coleta or None) if ult else None
+    por_missa = {}
+    for r in coletas:
+        k = r[4] or "Sem missa indicada"
+        n, t = por_missa.get(k, (0, Decimal("0")))
+        por_missa[k] = (n + 1, t + r[2])
+    tabela = sorted(((k, n, t, t / n) for k, (n, t) in por_missa.items()), key=lambda x: x[2], reverse=True)
+
+    return render_template("financeiro.html", area=area, user=user, ano=ano, anos=range(hoje.year, 2023, -1),
+                           total=total, total_own=total_own, media_coleta=media_coleta, n_coletas=len(coletas),
+                           dizimo_ano=sum(do_ano.values(), Decimal("0")), g_dizimo=g_dizimo, g_mensal=g_mensal,
+                           cats=cats, metodos=metodos, g_coletas=g_coletas, tabela=tabela, hoje=hoje)
+
+
+@app.route("/padre/financeiro/lancamentos", methods=["GET", "POST"])
+@padre_only
+def lancamentos(area, user):
+    hoje = datetime.now(TZ).date()
+    if request.method == "POST":
+        acao = request.form.get("acao")
+        metodo = request.form.get("method")
+        metodo = metodo if metodo in METHOD_LABEL else "nao_informado"
+        if acao in ("coleta", "dispensar"):
+            pend = {f"{d.isoformat()}|{t}": (d, t, n) for d, t, n in pending_masses()}
+            chave = request.form.get("mass_key", "")
+            valor = Decimal("0.00") if acao == "dispensar" else parse_money(request.form.get("amount"), "0.01", "1000000")
+            if chave not in pend:
+                flash("Essa missa já foi registrada ou saiu da lista.", "erro")
+            elif valor is None:
+                flash("Informe um valor válido para a coleta.", "erro")
+            else:
+                d, t, n = pend[chave]
+                db.session.add(FinanceEntry(day=d, category="coleta", amount=valor, method=metodo, note=n,
+                                            mass_label=mass_label(d, t), mass_key=chave, created_by=user.username))
+                db.session.commit()
+                flash("Coleta registrada." if valor > 0 else "Missa marcada como sem coleta.", "ok")
+        elif acao in ("novo", "editar"):
+            try:
+                dia = date.fromisoformat(request.form.get("day", ""))
+            except ValueError:
+                dia = None
+            cat = request.form.get("category")
+            valor = parse_money(request.form.get("amount"), "0.01", "1000000")
+            nota = clean(request.form.get("note"), 160) or None
+            if not dia or dia > hoje or cat not in CAT_LABEL or valor is None:
+                flash("Confira a data (não pode ser futura), a categoria e o valor.", "erro")
+            elif acao == "novo":
+                db.session.add(FinanceEntry(day=dia, category=cat, amount=valor, method=metodo, note=nota, created_by=user.username))
+                db.session.commit()
+                flash("Lançamento registrado.", "ok")
+            else:
+                e = db.session.get(FinanceEntry, int(request.form.get("id") or 0))
+                if e:
+                    e.day, e.category, e.amount, e.method, e.note = dia, cat, valor, metodo, nota
+                    db.session.commit()
+                    flash("Lançamento atualizado.", "ok")
+        elif acao == "apagar":
+            e = db.session.get(FinanceEntry, int(request.form.get("id") or 0))
+            if e:
+                db.session.delete(e)
+                db.session.commit()
+                flash("Lançamento apagado.", "ok")
+        return redirect(url_for("lancamentos"))
+    filtro = request.args.get("cat", "")
+    q = FinanceEntry.query
+    if filtro in CAT_LABEL:
+        q = q.filter_by(category=filtro)
+    items = q.order_by(FinanceEntry.day.desc(), FinanceEntry.id.desc()).limit(150).all()
+    return render_template("lancamentos.html", area=area, user=user, hoje=hoje, cats=CATS, methods=METHODS,
+                           pendentes=[(d, t, n, f"{d.isoformat()}|{t}") for d, t, n in pending_masses()],
+                           items=items, filtro=filtro, CAT_LABEL=CAT_LABEL, METHOD_LABEL=METHOD_LABEL)
 
 
 @app.route("/padre/senha", methods=["POST"])
