@@ -183,6 +183,13 @@ def pix_payload(key, name, city, amount, txid):
     return p + crc16(p)
 
 
+def qr_svg(payload):
+    """QR Code em SVG. O segno grava SVG em arquivo binário, então usamos BytesIO."""
+    out = io.BytesIO()
+    segno.make(payload, error="m").save(out, kind="svg", scale=6, border=2, dark="#1B2A5C", xmldecl=False)
+    return out.getvalue().decode("utf-8")
+
+
 def parse_money(raw):
     raw = re.sub(r"[^\d,.]", "", raw or "")
     if "," in raw:
@@ -274,9 +281,7 @@ def doar_pix(did):
         abort(404)
     payload = pix_payload(os.environ["PIX_KEY"], os.environ.get("PIX_NAME", content.PAROQUIA),
                           os.environ.get("PIX_CITY", "BRASIL"), d.amount, f"TEREZINHA{d.id}")
-    buf = io.StringIO()
-    segno.make(payload, error="m").save(buf, kind="svg", scale=6, border=2, dark="#1B2A5C", xmldecl=False)
-    return render_template("doar_pix.html", d=d, payload=payload, qr=buf.getvalue())
+    return render_template("doar_pix.html", d=d, payload=payload, qr=qr_svg(payload))
 
 
 def week_slots(days=14):
@@ -729,6 +734,11 @@ def confissoes(area, user):
 @app.errorhandler(404)
 def nf(e):
     return render_template("erro.html", msg="Página não encontrada."), 404
+
+
+@app.errorhandler(500)
+def erro_interno(e):
+    return render_template("erro.html", msg="Algo deu errado do nosso lado. Tente novamente em instantes."), 500
 
 
 @app.errorhandler(400)
