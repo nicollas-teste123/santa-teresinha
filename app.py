@@ -290,6 +290,7 @@ def padre_name():
 
 
 # ----------------------------------------------------------------- páginas públicas
+@app.route("/saude")
 @app.route("/healthz")
 def healthz():
     return "ok"
