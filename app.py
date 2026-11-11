@@ -1,17 +1,12 @@
-import csv
-import io
 import os
 import re
 import secrets
 import time
-import unicodedata
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation
 from functools import wraps
 from zoneinfo import ZoneInfo
 
-import segno
-from flask import (Flask, Response, abort, flash, jsonify, redirect, render_template,
+from flask import (Flask, abort, flash, jsonify, redirect, render_template,
                    request, session, url_for)
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError
@@ -23,10 +18,6 @@ TZ = ZoneInfo("America/Sao_Paulo")
 DIAS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
 LUGARES = [("matriz", "Matriz"), ("santa_luzia", "Capela Santa Luzia")]
 LUGAR_LABEL = dict(LUGARES)
-MESES_LONGOS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto",
-                "setembro", "outubro", "novembro", "dezembro"]
-MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
-
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -69,14 +60,6 @@ class Notice(db.Model):
     created_at = db.Column(db.DateTime, default=now_utc)
 
 
-class Donation(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120), nullable=False)
-    amount = db.Column(db.Numeric(10, 2), nullable=False)
-    status = db.Column(db.String(20), nullable=False, default="gerado")  # gerado | confirmado
-    created_at = db.Column(db.DateTime, default=now_utc)
-
-
 class Reflection(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     day = db.Column(db.Date, nullable=False, unique=True)  # uma reflexão por dia
@@ -104,29 +87,6 @@ class ExtraMass(db.Model):  # missa fora da rotina, em uma data específica
     created_at = db.Column(db.DateTime, default=now_utc)
 
 
-CATS = [("dizimo", "Dízimos", ""), ("coleta", "Coletas das missas", ""),
-        ("festa", "Festas e eventos", "não recorrente"), ("doacao", "Doações e donativos", ""),
-        ("repasse", "Coletas de repasse", "fora da receita própria"), ("outros", "Outras entradas", "")]
-CAT_LABEL = {k: v for k, v, _ in CATS}
-METHODS = [("dinheiro", "Dinheiro"), ("pix", "Pix"), ("cartao", "Cartão"),
-           ("transferencia", "Transferência"), ("nao_informado", "Não informado")]
-METHOD_LABEL = dict(METHODS)
-
-
-class FinanceEntry(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    day = db.Column(db.Date, nullable=False)
-    category = db.Column(db.String(20), nullable=False)
-    amount = db.Column(db.Numeric(12, 2), nullable=False)
-    method = db.Column(db.String(20), nullable=False, default="nao_informado")
-    note = db.Column(db.String(160))
-    mass_label = db.Column(db.String(30))  # ex.: "Dom 08:00" (só nas coletas de missa)
-    lugar = db.Column(db.String(20), nullable=False, default="matriz", server_default="matriz")
-    mass_key = db.Column(db.String(20))  # "AAAA-MM-DD|HH:MM", evita registrar a mesma missa duas vezes
-    created_by = db.Column(db.String(60))
-    created_at = db.Column(db.DateTime, default=now_utc)
-
-
 class ConfessionSlot(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     weekday = db.Column(db.Integer, nullable=False)  # 0 = segunda
@@ -149,7 +109,7 @@ def init_db():
     # Bancos criados antes da capela Santa Luzia ganham a coluna "lugar" (tudo que já existe vira "matriz").
     from sqlalchemy import inspect, text
     insp = inspect(db.engine)
-    for model in (MassSlot, ExtraMass, FinanceEntry):
+    for model in (MassSlot, ExtraMass):
         nome = model.__tablename__
         if "lugar" not in {c["name"] for c in insp.get_columns(nome)}:
             db.session.execute(text(f"ALTER TABLE {nome} ADD COLUMN lugar VARCHAR(20) NOT NULL DEFAULT 'matriz'"))
@@ -168,23 +128,6 @@ with app.app_context():
 
 
 # ----------------------------------------------------------------- helpers
-@app.template_filter("brl")
-def brl(v):
-    s = f"{Decimal(v):,.2f}"
-    return "R$ " + s.replace(",", "X").replace(".", ",").replace("X", ".")
-
-
-@app.template_filter("brlk")
-def brlk(v):
-    v = Decimal(v)
-    return f"R$ {v / 1000:.1f} mil".replace(".", ",") if v >= 1000 else f"R$ {int(v)}"
-
-
-@app.template_filter("pc")
-def pc(x):
-    return f"{x:.1f}".replace(".", ",") + "%"
-
-
 @app.template_filter("local")
 def local(dt):
     if not dt:
@@ -202,52 +145,6 @@ def datalonga(d):
     nomes = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto",
              "setembro", "outubro", "novembro", "dezembro"]
     return f"{DIAS[d.weekday()]}-feira, {d.day} de {nomes[d.month - 1]} de {d.year}".replace("Sábado-feira", "Sábado").replace("Domingo-feira", "Domingo")
-
-
-def ascii_up(text, limit):
-    t = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
-    return re.sub(r"[^A-Za-z0-9 ]", "", t).upper().strip()[:limit]
-
-
-def tlv(i, v):
-    return f"{i}{len(v):02d}{v}"
-
-
-def crc16(s):
-    crc = 0xFFFF
-    for b in s.encode():
-        crc ^= b << 8
-        for _ in range(8):
-            crc = ((crc << 1) ^ 0x1021) if crc & 0x8000 else (crc << 1)
-            crc &= 0xFFFF
-    return f"{crc:04X}"
-
-
-def pix_payload(key, name, city, amount, txid):
-    merchant = tlv("00", "br.gov.bcb.pix") + tlv("01", key)
-    p = (tlv("00", "01") + tlv("01", "11") + tlv("26", merchant) + tlv("52", "0000")
-         + tlv("53", "986") + tlv("54", f"{amount:.2f}") + tlv("58", "BR")
-         + tlv("59", ascii_up(name, 25) or "PAROQUIA") + tlv("60", ascii_up(city, 15) or "BRASIL")
-         + tlv("62", tlv("05", txid)) + "6304")
-    return p + crc16(p)
-
-
-def qr_svg(payload):
-    """QR Code em SVG. O segno grava SVG em arquivo binário, então usamos BytesIO."""
-    out = io.BytesIO()
-    segno.make(payload, error="m").save(out, kind="svg", scale=6, border=2, dark="#1B2A5C", xmldecl=False)
-    return out.getvalue().decode("utf-8")
-
-
-def parse_money(raw, lo="1", hi="50000"):
-    raw = re.sub(r"[^\d,.]", "", raw or "")
-    if "," in raw:
-        raw = raw.replace(".", "").replace(",", ".")
-    try:
-        v = Decimal(raw).quantize(Decimal("0.01"))
-    except (InvalidOperation, ValueError):
-        return None
-    return v if Decimal(lo) <= v <= Decimal(hi) else None
 
 
 def clean(text, limit):
@@ -302,38 +199,6 @@ def index():
     pm = next_mass()
     return render_template("index.html", notices=notices, links=content.LINKS, proxima=pm,
                            autor=padre_name(), paroquia=content.PAROQUIA)
-
-
-@app.route("/doar", methods=["GET", "POST"])
-def doar():
-    if not os.environ.get("PIX_KEY"):
-        return render_template("doar.html", sem_pix=True)
-    if request.method == "POST":
-        name = clean(request.form.get("name"), 120)
-        amount = parse_money(request.form.get("amount"))
-        if not name or amount is None:
-            flash("Informe seu nome e um valor entre R$ 1,00 e R$ 50.000,00.", "erro")
-            return render_template("doar.html", name=name, amount=request.form.get("amount", ""))
-        d = Donation(name=name, amount=amount)
-        db.session.add(d)
-        db.session.commit()
-        return redirect(url_for("doar_pix", did=d.id, t=donation_token(d.id)))
-    return render_template("doar.html")
-
-
-def donation_token(did):
-    import hashlib
-    return hashlib.sha256(f"{did}{app.config['SECRET_KEY']}".encode()).hexdigest()[:16]
-
-
-@app.route("/doar/<int:did>")
-def doar_pix(did):
-    d = db.session.get(Donation, did) or abort(404)
-    if request.args.get("t") != donation_token(did):
-        abort(404)
-    payload = pix_payload(os.environ["PIX_KEY"], os.environ.get("PIX_NAME", content.PAROQUIA),
-                          os.environ.get("PIX_CITY", "BRASIL"), d.amount, f"TEREZINHA{d.id}")
-    return render_template("doar_pix.html", d=d, payload=payload, qr=qr_svg(payload))
 
 
 def week_slots(days=14):
@@ -536,8 +401,7 @@ def padre_root():
 @app.route(f"/{AREA}/painel")
 @area_required
 def painel(area, user):
-    # Não há mais tela de resumo: o padre vai direto ao Financeiro e a secretaria aos Avisos.
-    return redirect(url_for("financeiro") if area == "padre" else url_for("avisos", area="admin"))
+    return redirect(url_for("avisos", area=area))
 
 
 @app.route(f"/{AREA}/avisos", methods=["GET", "POST"])
@@ -613,23 +477,6 @@ def missas_admin(area, user):
     slots = MassSlot.query.order_by(MassSlot.weekday, MassSlot.time).all()
     extras = ExtraMass.query.filter(ExtraMass.day >= hoje).order_by(ExtraMass.day, ExtraMass.time).all()
     return render_template("missas_admin.html", area=area, user=user, slots=slots, extras=extras, hoje=hoje)
-
-
-@app.route(f"/{AREA}/doacoes", methods=["GET", "POST"])
-@area_required
-def doacoes(area, user):
-    if request.method == "POST":
-        d = db.session.get(Donation, int(request.form.get("id") or 0))
-        if d and request.form.get("acao") == "alternar":
-            d.status = "gerado" if d.status == "confirmado" else "confirmado"
-            db.session.commit()
-        return redirect(url_for("doacoes", area=area, filtro=request.args.get("filtro", "")))
-    filtro = request.args.get("filtro", "")
-    q = Donation.query
-    if filtro in ("gerado", "confirmado"):
-        q = q.filter_by(status=filtro)
-    items = q.order_by(Donation.created_at.desc()).limit(500).all()
-    return render_template("doacoes.html", area=area, user=user, items=items, filtro=filtro)
 
 
 # ----------------------------------------------------------------- só o padre
@@ -711,354 +558,6 @@ def padre_reflexoes(area, user):
         return redirect(url_for("padre_reflexoes"))
     items = Reflection.query.order_by(Reflection.day.desc()).limit(60).all()
     return render_template("padre_reflexoes.html", area=area, user=user, items=items, hoje=hoje)
-
-
-def mass_label(d, t=None):
-    dia = DIAS[d.weekday()][:3]
-    return f"{dia} {t}" if t else dia
-
-
-def parse_hora(raw):
-    m = re.fullmatch(r"(\d{1,2}):(\d{2})", (raw or "").strip())
-    if not m or int(m[1]) > 23 or int(m[2]) > 59:
-        return None
-    return f"{int(m[1]):02d}:{m[2]}"
-
-
-def finance_rows(start, end):
-    """Lançamentos do padre + doações confirmadas pelo site (Pix), como (dia, categoria, valor, forma, missa, local)."""
-    rows = [(e.day, e.category, e.amount, e.method, e.mass_label, e.lugar)
-            for e in FinanceEntry.query.filter(FinanceEntry.day >= start, FinanceEntry.day <= end).all()]
-    for d in Donation.query.filter_by(status="confirmado").all():
-        ld = d.created_at.replace(tzinfo=timezone.utc).astimezone(TZ).date()
-        if start <= ld <= end:
-            rows.append((ld, "doacao", d.amount, "pix", None, "matriz"))  # doações do site contam na matriz
-    return rows
-
-
-def soma(rs, ano, mes=None, ate=None, cat=None, propria=False):
-    t = Decimal("0")
-    for d, c, v, *_ in rs:
-        if d.year != ano or (mes and d.month != mes) or (ate and d.month > ate):
-            continue
-        if (cat and c != cat) or (propria and c == "repasse"):
-            continue
-        t += v
-    return t
-
-
-def variacao(cur, prev, ref=""):
-    if not prev:
-        return {"txt": "sem base de comparação", "cls": "flat", "pct": None}
-    p = float((cur - prev) / prev * 100)
-    cls = "up" if p > 0.05 else "down" if p < -0.05 else "flat"
-    seta = {"up": "▲", "down": "▼", "flat": "■"}[cls]
-    return {"txt": f"{seta} {abs(p):.1f}%".replace(".", ",") + (f" vs {ref}" if ref else ""), "cls": cls, "pct": p}
-
-
-def mes_anterior(ano, mes):
-    return (ano, mes - 1) if mes > 1 else (ano - 1, 12)
-
-
-def ultimo_dia(ano, mes):
-    return date(ano + (mes == 12), mes % 12 + 1, 1) - timedelta(days=1)
-
-
-def chart(items, avg=None):
-    """items: [(rótulo, valor, é_o_destaque)] -> estrutura pronta para o gráfico de barras."""
-    top = max([v for _, v, _ in items] + ([avg] if avg else []) + [Decimal("1")])
-    return {"items": [{"label": l, "value": v, "pct": int(v / top * 100), "last": last} for l, v, last in items],
-            "avg": avg, "avg_pct": int(avg / top * 100) if avg else None, "max": top}
-
-
-def chart2(labels, a, b, destaque):
-    top = max(list(a) + list(b) + [Decimal("1")])
-    return {"max": top, "items": [{"label": l, "a": x, "b": y, "pa": int(x / top * 100), "pb": int(y / top * 100),
-                                   "ref": i + 1 == destaque} for i, (l, x, y) in enumerate(zip(labels, a, b))]}
-
-
-def saturday_of(d):
-    return d - timedelta(days=(d.weekday() - 5) % 7)
-
-
-def periodo_ref():
-    hoje = datetime.now(TZ).date()
-    try:
-        ano = min(max(int(request.args.get("ano", hoje.year)), 2000), hoje.year + 1)
-    except ValueError:
-        ano = hoje.year
-    padrao = hoje.month if ano == hoje.year else 12
-    try:
-        mes = int(request.args.get("mes", padrao))
-    except ValueError:
-        mes = padrao
-    if not 1 <= mes <= 12:
-        mes = padrao
-    local = request.args.get("local", "")
-    return hoje, ano, mes, (local if local in LUGAR_LABEL else "")
-
-
-@app.route("/padre/financeiro")
-@padre_only
-def financeiro(area, user):
-    hoje, ano, mes, local = periodo_ref()
-    rows_all = finance_rows(date(ano - 1, 1, 1), date(ano, 12, 31))
-    rows = [r for r in rows_all if not local or r[5] == local]
-    yr = [r for r in rows if r[0].year == ano]
-    total = soma(rows, ano)
-    total_own = soma(rows, ano, propria=True)
-    own = [r for r in yr if r[1] != "repasse"]
-    pano, pmes = mes_anterior(ano, mes)
-    nome_mes = MESES_LONGOS[mes - 1]
-
-    # ---------- indicadores (mês de referência)
-    own_mes, own_prev = soma(rows, ano, mes, propria=True), soma(rows, pano, pmes, propria=True)
-    diz_mes, diz_prev = soma(rows, ano, mes, cat="dizimo"), soma(rows, pano, pmes, cat="dizimo")
-    col = [r for r in rows if r[1] == "coleta" and r[2] > 0]
-
-    def colstats(a, m):
-        vs = [r[2] for r in col if r[0].year == a and r[0].month == m]
-        return sum(vs, Decimal("0")), len(vs)
-    col_mes, n_col = colstats(ano, mes)
-    col_prev, n_prev = colstats(pano, pmes)
-    media_mes = col_mes / n_col if n_col else Decimal("0")
-    media_prev = col_prev / n_prev if n_prev else Decimal("0")
-    acum, acum_ant = soma(rows, ano, ate=mes, propria=True), soma(rows, ano - 1, ate=mes, propria=True)
-    mesmo_ant = soma(rows, ano - 1, mes, propria=True)
-
-    fim_ref = min(ultimo_dia(ano, mes), hoje)
-    ultimo = saturday_of(fim_ref)
-    dz = {}
-    for r in rows:
-        if r[1] == "dizimo":
-            w = saturday_of(r[0])
-            dz[w] = dz.get(w, Decimal("0")) + r[2]
-    m4 = sum((dz.get(ultimo - timedelta(weeks=i), Decimal("0")) for i in range(4)), Decimal("0")) / 4
-    m4_ant = sum((dz.get(ultimo - timedelta(weeks=i), Decimal("0")) for i in range(4, 8)), Decimal("0")) / 4
-    ate_graf = hoje.month if ano == hoje.year else 12
-    por_mes = {m: soma(rows, ano, m, propria=True) for m in range(1, ate_graf + 1)}
-    melhor_m = max(por_mes, key=por_mes.get)
-    p_diz = float(diz_mes / own_mes * 100) if own_mes else 0.0
-    p_diz_ant = float(diz_prev / own_prev * 100) if own_prev else 0.0
-
-    kpis = [
-        {"label": f"Receita própria · {nome_mes}", "valor": brl(own_mes), "sub": "",
-         "delta": variacao(own_mes, own_prev, "mês anterior")},
-        {"label": f"Dízimos · {nome_mes}", "valor": brl(diz_mes), "sub": "", "delta": variacao(diz_mes, diz_prev, "mês anterior")},
-        {"label": f"Coletas das missas · {nome_mes}", "valor": brl(col_mes),
-         "sub": f"{n_col} coleta(s) registrada(s)", "delta": variacao(col_mes, col_prev, "mês anterior")},
-        {"label": "Média por coleta de missa", "valor": brl(media_mes), "sub": f"mês anterior: {brl(media_prev)}",
-         "delta": variacao(media_mes, media_prev, "mês anterior")},
-        {"label": f"Acumulado de {ano} (até {MESES[mes-1]})", "valor": brl(acum), "sub": f"{ano - 1}: {brl(acum_ant)}",
-         "delta": variacao(acum, acum_ant, f"mesmo período de {ano - 1}")},
-        {"label": f"Receita própria vs {MESES[mes-1]}/{ano - 1}", "valor": brl(own_mes), "sub": f"{MESES[mes-1]}/{ano - 1}: {brl(mesmo_ant)}",
-         "delta": variacao(own_mes, mesmo_ant, f"{MESES[mes-1]}/{ano - 1}")},
-        {"label": "Dízimo médio por fim de semana", "valor": brl(m4), "sub": "últimos 4 fins de semana",
-         "delta": variacao(m4, m4_ant, "4 fins de semana anteriores")},
-        {"label": f"Melhor mês de {ano}", "valor": brl(por_mes[melhor_m]), "sub": MESES_LONGOS[melhor_m - 1].capitalize(), "delta": None},
-        {"label": "Dízimo na receita própria", "valor": pc(p_diz), "sub": f"mês anterior: {pc(p_diz_ant)}", "delta": None},
-    ]
-
-    # ---------- comparativos
-    g_anos = chart2([m for m in MESES],
-                    [soma(rows, ano, m, propria=True) for m in range(1, 13)],
-                    [soma(rows, ano - 1, m, propria=True) for m in range(1, 13)], mes)
-    comp_cats = []
-    for k, nome, obs in CATS:
-        prev, cur = soma(rows, pano, pmes, cat=k), soma(rows, ano, mes, cat=k)
-        if prev or cur:
-            comp_cats.append({"nome": nome, "prev": prev, "cur": cur, "d": variacao(cur, prev)})
-    tot_prev, tot_cur = soma(rows, pano, pmes), soma(rows, ano, mes)
-    comp_total = {"prev": tot_prev, "cur": tot_cur, "d": variacao(tot_cur, tot_prev)}
-    comp_locais = []
-    if not local:
-        for k, nome in LUGARES:
-            rl = [r for r in rows_all if r[5] == k]
-            prev, cur = soma(rl, pano, pmes, propria=True), soma(rl, ano, mes, propria=True)
-            comp_locais.append({"nome": nome, "prev": prev, "cur": cur, "d": variacao(cur, prev), "ano": soma(rl, ano, propria=True)})
-
-    # ---------- painéis do ano
-    sabados = [ultimo - timedelta(weeks=i) for i in range(13, -1, -1)]
-    do_ano = {w: v for w, v in dz.items() if w.year == ano}
-    media_dz = None
-    if do_ano:
-        media_dz = sum(do_ano.values()) / max((ultimo - min(do_ano)).days // 7 + 1, 1)
-    g_dizimo = chart([(w.strftime("%d/%m"), dz.get(w, Decimal("0")), w == ultimo) for w in sabados], media_dz)
-    g_mensal = chart([(f"{MESES[m-1]}/{str(ano)[2:]}", por_mes[m], m == mes) for m in range(1, ate_graf + 1)])
-
-    cats = []
-    for k, nome, obs in CATS:
-        v = soma(rows, ano, cat=k)
-        if v > 0:
-            cats.append({"nome": nome, "obs": obs, "v": v, "p": float(v / total * 100) if total else 0})
-    topo = max([c["v"] for c in cats] + [Decimal("1")])
-    for c in cats:
-        c["w"] = int(c["v"] / topo * 100)
-    cats.sort(key=lambda c: c["v"], reverse=True)
-    metodos = []
-    for k, nome in METHODS:
-        v = sum((r[2] for r in own if r[3] == k), Decimal("0"))
-        if v > 0:
-            metodos.append({"nome": nome, "v": v, "p": float(v / total_own * 100) if total_own else 0})
-    topo_m = max([m["v"] for m in metodos] + [Decimal("1")])
-    for m in metodos:
-        m["w"] = int(m["v"] / topo_m * 100)
-    metodos.sort(key=lambda m: m["v"], reverse=True)
-
-    coletas = [r for r in yr if r[1] == "coleta" and r[2] > 0]
-    media_coleta = (sum((r[2] for r in coletas), Decimal("0")) / len(coletas)) if coletas else Decimal("0")
-    q_ult = FinanceEntry.query.filter(FinanceEntry.category == "coleta", FinanceEntry.amount > 0,
-                                      FinanceEntry.day <= ultimo_dia(ano, mes))
-    if local:
-        q_ult = q_ult.filter(FinanceEntry.lugar == local)
-    ult = q_ult.order_by(FinanceEntry.day.desc(), FinanceEntry.id.desc()).limit(12).all()[::-1]
-
-    def rot(e):
-        hora = e.mass_label.split()[-1] if e.mass_label and ":" in e.mass_label else ""
-        return f"{e.day.strftime('%d/%m')} {hora}".strip()
-    g_coletas = chart([(rot(e), e.amount, i == len(ult) - 1) for i, e in enumerate(ult)], media_coleta or None) if ult else None
-    por_missa = {}
-    for r in coletas:
-        k = (r[4] or "Sem horário") + (f" · {LUGAR_LABEL[r[5]]}" if not local else "")
-        n, t = por_missa.get(k, (0, Decimal("0")))
-        por_missa[k] = (n + 1, t + r[2])
-    tabela = sorted(((k, n, t, t / n) for k, (n, t) in por_missa.items()), key=lambda x: x[2], reverse=True)
-
-    return render_template("financeiro.html", area=area, user=user, ano=ano, mes=mes, local=local,
-                           nome_mes=nome_mes, anos=range(hoje.year + 1, 2023, -1), meses_nomes=MESES_LONGOS,
-                           total=total, total_own=total_own, kpis=kpis, g_anos=g_anos, comp_cats=comp_cats,
-                           comp_total=comp_total, comp_locais=comp_locais, g_dizimo=g_dizimo, g_mensal=g_mensal,
-                           cats=cats, metodos=metodos, g_coletas=g_coletas, tabela=tabela, n_coletas=len(coletas),
-                           ant_label=f"{MESES[pmes-1]}/{pano}", cur_label=f"{MESES[mes-1]}/{ano}", hoje=hoje)
-
-
-def csv_seguro(txt):
-    txt = txt or ""
-    return "'" + txt if txt[:1] in ("=", "+", "-", "@") else txt
-
-
-@app.route("/padre/financeiro/relatorio")
-@padre_only
-def relatorio(area, user):
-    hoje, ano, mes, local = periodo_ref()
-    pano, pmes = mes_anterior(ano, mes)
-    ini, fim = date(ano, mes, 1), ultimo_dia(ano, mes)
-    q = FinanceEntry.query.filter(FinanceEntry.day >= ini, FinanceEntry.day <= fim)
-    if local:
-        q = q.filter_by(lugar=local)
-    det = [{"day": e.day, "lugar": e.lugar, "cat": e.category, "catn": CAT_LABEL[e.category], "metodo": METHOD_LABEL[e.method],
-            "v": e.amount, "mass": e.mass_label,
-            "desc": " · ".join(x for x in (e.mass_label if e.category == "coleta" else None, e.note) if x)}
-           for e in q.order_by(FinanceEntry.day, FinanceEntry.id).all()]
-    if local in ("", "matriz"):
-        for d in Donation.query.filter_by(status="confirmado").all():
-            ld = d.created_at.replace(tzinfo=timezone.utc).astimezone(TZ).date()
-            if ini <= ld <= fim:
-                det.append({"day": ld, "lugar": "matriz", "cat": "doacao", "catn": CAT_LABEL["doacao"], "metodo": "Pix",
-                            "v": d.amount, "mass": None, "desc": "Doação pelo site"})
-        det.sort(key=lambda x: x["day"])
-
-    if request.args.get("csv"):
-        buf = io.StringIO()
-        w = csv.writer(buf, delimiter=";")
-        w.writerow(["Data", "Local", "Categoria", "Descrição", "Forma", "Valor (R$)"])
-        for x in det:
-            w.writerow([x["day"].strftime("%d/%m/%Y"), LUGAR_LABEL[x["lugar"]], x["catn"], csv_seguro(x["desc"]),
-                        x["metodo"], f"{x['v']:.2f}".replace(".", ",")])
-        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv",
-                        headers={"Content-Disposition": f"attachment; filename=financeiro-{ano}-{mes:02d}.csv"})
-
-    total = sum((x["v"] for x in det), Decimal("0"))
-    propria = sum((x["v"] for x in det if x["cat"] != "repasse"), Decimal("0"))
-    rows_all = finance_rows(date(ano - 1, 1, 1), date(ano, 12, 31))
-    rows = [r for r in rows_all if not local or r[5] == local]
-    prev_own, mesmo_own = soma(rows, pano, pmes, propria=True), soma(rows, ano - 1, mes, propria=True)
-    por_cat = []
-    for k, nome, obs in CATS:
-        v = sum((x["v"] for x in det if x["cat"] == k), Decimal("0"))
-        if v:
-            por_cat.append({"nome": nome, "obs": obs, "v": v, "p": float(v / total * 100) if total else 0,
-                            "prev": soma(rows, pano, pmes, cat=k), "d": variacao(v, soma(rows, pano, pmes, cat=k))})
-    por_forma = []
-    for k, nome in METHODS:
-        v = sum((x["v"] for x in det if x["cat"] != "repasse" and x["metodo"] == nome), Decimal("0"))
-        if v:
-            por_forma.append({"nome": nome, "v": v, "p": float(v / propria * 100) if propria else 0})
-    por_local = []
-    if not local:
-        for k, nome in LUGARES:
-            v = sum((x["v"] for x in det if x["lugar"] == k and x["cat"] != "repasse"), Decimal("0"))
-            if v:
-                por_local.append({"nome": nome, "v": v, "p": float(v / propria * 100) if propria else 0})
-    fins = {}
-    for x in det:
-        if x["cat"] == "dizimo":
-            sab = saturday_of(x["day"])
-            fins[sab] = fins.get(sab, Decimal("0")) + x["v"]
-    coletas = [x for x in det if x["cat"] == "coleta" and x["v"] > 0]
-    tot_col = sum((x["v"] for x in coletas), Decimal("0"))
-    return render_template("relatorio.html", area=area, user=user, ano=ano, mes=mes, local=local,
-                           titulo=f"{MESES_LONGOS[mes - 1].capitalize()} de {ano}", total=total, propria=propria,
-                           repasse=total - propria, por_cat=por_cat, por_forma=por_forma, por_local=por_local,
-                           fins=sorted(fins.items()), coletas=coletas, tot_col=tot_col, det=det,
-                           media_col=(tot_col / len(coletas)) if coletas else Decimal("0"),
-                           d_prev=variacao(propria, prev_own), prev_own=prev_own, ant_label=f"{MESES[pmes-1]}/{pano}",
-                           d_ano=variacao(propria, mesmo_own), mesmo_own=mesmo_own, ano_label=f"{MESES[mes-1]}/{ano - 1}",
-                           gerado=datetime.now(TZ).strftime("%d/%m/%Y %H:%M"), paroquia=content.PAROQUIA)
-
-
-@app.route("/padre/financeiro/lancamentos", methods=["GET", "POST"])
-@padre_only
-def lancamentos(area, user):
-    hoje = datetime.now(TZ).date()
-    if request.method == "POST":
-        acao = request.form.get("acao")
-        metodo = request.form.get("method")
-        metodo = metodo if metodo in METHOD_LABEL else "nao_informado"
-        if acao in ("novo", "editar"):
-            try:
-                dia = date.fromisoformat(request.form.get("day", ""))
-            except ValueError:
-                dia = None
-            cat = request.form.get("category")
-            valor = parse_money(request.form.get("amount"), "0.01", "1000000")
-            nota = clean(request.form.get("note"), 160) or None
-            lg = request.form.get("lugar")
-            lg = lg if lg in LUGAR_LABEL else "matriz"
-            hora = parse_hora(request.form.get("hora"))
-            if not dia or dia > hoje or cat not in CAT_LABEL or valor is None:
-                flash("Confira a data (não pode ser futura), a categoria e o valor.", "erro")
-            else:
-                rotulo = mass_label(dia, hora) if cat == "coleta" else None
-                if acao == "novo":
-                    db.session.add(FinanceEntry(day=dia, category=cat, amount=valor, method=metodo, note=nota, lugar=lg,
-                                                mass_label=rotulo, created_by=user.username))
-                    flash("Coleta da missa registrada." if cat == "coleta" else "Lançamento registrado.", "ok")
-                else:
-                    e = db.session.get(FinanceEntry, int(request.form.get("id") or 0))
-                    if e:
-                        e.day, e.category, e.amount, e.method, e.note, e.lugar, e.mass_label = dia, cat, valor, metodo, nota, lg, rotulo
-                        flash("Lançamento atualizado.", "ok")
-                db.session.commit()
-        elif acao == "apagar":
-            e = db.session.get(FinanceEntry, int(request.form.get("id") or 0))
-            if e:
-                db.session.delete(e)
-                db.session.commit()
-                flash("Lançamento apagado.", "ok")
-        return redirect(url_for("lancamentos"))
-    filtro = request.args.get("cat", "")
-    flocal = request.args.get("local", "")
-    q = FinanceEntry.query
-    if filtro in CAT_LABEL:
-        q = q.filter_by(category=filtro)
-    if flocal in LUGAR_LABEL:
-        q = q.filter_by(lugar=flocal)
-    else:
-        flocal = ""
-    items = q.order_by(FinanceEntry.day.desc(), FinanceEntry.id.desc()).limit(150).all()
-    return render_template("lancamentos.html", area=area, user=user, hoje=hoje, cats=CATS, methods=METHODS,
-                           items=items, filtro=filtro, flocal=flocal, CAT_LABEL=CAT_LABEL, METHOD_LABEL=METHOD_LABEL)
 
 
 @app.route("/padre/senha", methods=["POST"])

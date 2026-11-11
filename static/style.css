@@ -84,12 +84,6 @@ textarea{min-height:90px;resize:vertical}
 .horas input:checked+label{background:var(--navy);border-color:var(--navy);color:#fff}
 .horas input:focus-visible+label{outline:3px solid var(--rose);outline-offset:2px}
 
-/* pix */
-.qr{width:min(280px,80%);margin:6px auto 16px;padding:12px;background:#fff;border:1px solid var(--line);border-radius:12px}
-.qr svg{width:100%;height:auto;display:block}
-.copia{font:.8rem/1.4 ui-monospace,Menlo,monospace;background:#F1F2F8;border-radius:9px;padding:11px;word-break:break-all;margin-bottom:12px;max-height:110px;overflow:auto}
-.valor{font-family:var(--serif);font-size:2.2rem;font-weight:700;color:var(--navy);text-align:center;margin:0}
-
 /* padroeira */
 details.parte{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden}
 details.parte summary{cursor:pointer;padding:14px 16px;font-family:var(--serif);font-size:1.2rem;font-weight:700;color:var(--navy);list-style:none;display:flex;gap:10px;align-items:baseline}
@@ -162,58 +156,3 @@ th{color:var(--muted);font-weight:600;font-size:.82rem}
 .grade .dia-nome{font-weight:700;min-width:84px;color:var(--navy)}
 .grade .horas-txt{font-weight:600}
 .grade small{color:var(--muted);display:block;font-weight:400}
-
-/* financeiro */
-.filtros{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px}
-.filtros select{width:auto}
-.grafico{position:relative}
-.gmax{font-size:.74rem;color:var(--muted);margin-bottom:2px}
-.gbarras{position:relative;display:flex;align-items:flex-end;gap:5px;height:160px;border-bottom:1px solid var(--line);background:
-  repeating-linear-gradient(to top,transparent 0,transparent 39px,var(--line) 39px,var(--line) 40px)}
-.gcol{flex:1;height:100%;display:flex;align-items:flex-end}
-.gcol i{display:block;width:100%;background:var(--navy);border-radius:4px 4px 0 0;min-height:2px}
-.gcol i.ult{background:#B89A55}
-.grafico.ambar .gcol i{background:#B8741A}
-.gmedia{position:absolute;left:0;right:0;border-top:2px dashed var(--muted);pointer-events:none}
-.grot{display:flex;gap:5px;margin-top:5px}
-.grot span{flex:1;text-align:center;font-size:.62rem;color:var(--muted);white-space:nowrap;overflow:hidden}
-@media(max-width:600px){.grot span:nth-child(even){visibility:hidden}}
-.legenda{display:flex;gap:14px;flex-wrap:wrap;font-size:.8rem;color:var(--muted);margin:0 0 10px}
-.legenda b{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
-.hb{margin-bottom:14px}
-.hb .l{display:flex;justify-content:space-between;gap:10px;font-size:.93rem}
-.hb .l small{color:var(--muted)}
-.hb .t{height:9px;background:#E8EAF2;border-radius:5px;margin-top:5px;overflow:hidden}
-.hb .t i{display:block;height:100%;background:var(--navy);border-radius:5px}
-.pend{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px;background:#fff}
-.pend form{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:8px}
-.pend input[type=text]{width:120px}
-.pend select{width:auto}
-
-/* indicadores e comparativos */
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
-.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:3px}
-.kpi small{color:var(--muted);font-weight:600;font-size:.82rem}
-.kpi b{font-family:var(--serif);font-size:1.8rem;color:var(--navy);line-height:1.1}
-.kpi .sub{color:var(--muted);font-size:.8rem}
-.delta{font-size:.8rem;font-weight:700;white-space:nowrap}
-.delta.up{color:var(--ok)} .delta.down{color:var(--err)} .delta.flat{color:var(--muted)}
-.gcol.g2{gap:2px}
-.gcol.g2 i{width:50%}
-.gcol.g2 i.b{background:#AEB6D3}
-.gcol.g2 i.a.ref{background:#B89A55}
-h3{font-size:1.2rem}
-/* relatório */
-.rel h2{font-size:1.3rem;margin-top:22px}
-.rel-topo{border-bottom:2px solid var(--navy);padding-bottom:10px}
-.comp td:first-child{width:50%}
-.assinaturas{display:flex;gap:40px;margin-top:60px}
-.assinaturas div{flex:1;border-top:1px solid var(--ink);padding-top:6px;text-align:center;font-size:.9rem}
-@media print{
-  .no-print,.nav{display:none !important}
-  body{background:#fff;font-size:12px}
-  .wrap.wide{max-width:none;padding:0}
-  .num,.painel-box{border:1px solid #ccc}
-  .rel h2{break-after:avoid} table,.hb{break-inside:avoid}
-  .grid2{grid-template-columns:1fr 1fr}
-}

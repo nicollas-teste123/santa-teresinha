@@ -15,9 +15,3 @@ services:
         sync: false
       - key: ADMIN_PASSWORD
         sync: false
-      - key: PIX_KEY
-        sync: false
-      - key: PIX_NAME
-        sync: false
-      - key: PIX_CITY
-        sync: false

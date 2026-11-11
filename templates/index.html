@@ -25,7 +25,6 @@
   <main>
     <h2 class="sec">Serviços da paróquia</h2>
     <ul class="lista">
-      <li><a class="item destaque" href="{{ url_for('doar') }}"><span class="ic">{{ icone('doar') }}</span><span><b>Fazer uma doação</b><span class="s">Contribua por Pix com a paróquia</span></span><span class="seta">›</span></a></li>
       <li><a class="item" href="{{ url_for('missas') }}"><span class="ic">{{ icone('igreja') }}</span><span><b>Horários de missas</b><span class="s">{% if proxima %}Próxima: {{ proxima.day|diabr }} às {{ proxima.time }}{% else %}Veja a programação{% endif %}</span></span><span class="seta">›</span></a></li>
       <li><a class="item" href="{{ url_for('reflexoes') }}"><span class="ic">{{ icone('livro') }}</span><span><b>Reflexões do padre</b><span class="s">A palavra do dia</span></span><span class="seta">›</span></a></li>
       <li><a class="item" href="{{ url_for('confissao') }}"><span class="ic">{{ icone('confissao') }}</span><span><b>Marcar confissão</b><span class="s">Escolha um horário com o padre</span></span><span class="seta">›</span></a></li>
